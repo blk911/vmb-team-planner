@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin — VMB Team</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+  <script>
+    var firebaseConfig = { apiKey: "AIzaSyA9uPFEC9jTpbxGNkSuGTtaVn5ojU5Ltl8", authDomain: "vmb-team.firebaseapp.com", projectId: "vmb-team", storageBucket: "vmb-team.firebasestorage.app", messagingSenderId: "288248384764", appId: "1:288248384764:web:b406a09f7e49173c5edb79", measurementId: "G-CMRTE1WBBD" };
+    if (typeof firebase !== 'undefined') { firebase.initializeApp(firebaseConfig); window.firebaseDb = firebase.firestore(); }
+  </script>
+  <style>
+    :root{
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --panel2: #fbfcff;
+      --text: #0f172a;
+      --muted: #475569;
+      --line: rgba(15,23,42,0.10);
+      --accent: #2563eb;
+      --good: #16a34a;
+      --danger: #e11d48;
+      --shadow: 0 10px 30px rgba(2,6,23,0.10);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background:
+        radial-gradient(1200px 700px at 10% -20%, rgba(37,99,235,0.12), transparent 55%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+    }
+
+    /* ADMIN HERO — placeholder for your build */
+    .adminHero{
+      background: linear-gradient(135deg, rgba(15,23,42,0.04) 0%, rgba(37,99,235,0.08) 100%);
+      border-bottom: 1px solid var(--line);
+      padding: 20px 24px;
+      text-align: center;
+    }
+    .adminHero h1{
+      margin: 0 0 6px 0;
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+    }
+    .adminHero p{
+      margin: 0;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .adminHero .heroActions{
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .wrap{
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 14px;
+    }
+
+    .panel{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .panelHeader{
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: linear-gradient(180deg, rgba(15,23,42,0.03), transparent 120px);
+    }
+    .panelHeader h2{
+      margin: 0;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .panelBody{ padding: 18px; }
+
+    input, button{
+      font: inherit;
+      color: var(--text);
+    }
+    input{
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      outline: none;
+    }
+    input:focus{
+      border-color: rgba(37,99,235,0.55);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+
+    .btn{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 12px;
+      font-weight: 700;
+      border: 1px solid rgba(15,23,42,0.12);
+      background: #fff;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn.secondary{ background: rgba(15,23,42,0.04); }
+    .btn.good{ background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.28); }
+    .btn.danger{ background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.22); }
+
+    .pill{
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(15,23,42,0.03);
+      color: var(--muted);
+    }
+
+    .memberForm{
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 700px){
+      .memberForm{ grid-template-columns: 1fr 1fr auto; }
+    }
+    .memberForm .field{
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .memberForm label{
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .memberList{
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .memberRow{
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(15,23,42,0.02);
+    }
+    .memberRowTitle{ font-weight: 800; font-size: 15px; }
+    .memberRowMeta{ font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .memberRowActions{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .memberRowActions a{ text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <!-- ADMIN HERO — you'll build the full hero here -->
+  <header class="adminHero">
+    <h1>Admin</h1>
+    <p>Manage team members and create their planner pages</p>
+    <div class="heroActions">
+      <a href="index.html" class="btn secondary">← Back to Planner</a>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="panel">
+      <div class="panelHeader">
+        <h2>Add Member</h2>
+        <span class="pill">Template: name, phone, email, role</span>
+      </div>
+      <div class="panelBody">
+        <form class="memberForm" id="memberForm">
+          <div class="field">
+            <label>Name</label>
+            <input id="memberName" placeholder="e.g. JSW" required />
+          </div>
+          <div class="field">
+            <label>Phone</label>
+            <input id="memberPhone" placeholder="512-555-1212" />
+          </div>
+          <div class="field">
+            <label>Email</label>
+            <input id="memberEmail" type="email" placeholder="user@example.com" />
+          </div>
+          <div class="field">
+            <label>Role</label>
+            <input id="memberRole" placeholder="owner / member / admin" value="member" />
+          </div>
+          <div class="field">
+            <button type="submit" class="btn good">Add Member</button>
+          </div>
+        </form>
+
+        <div class="panelHeader" style="border-bottom:none; padding-top:0;">
+          <h2>Members</h2>
+          <span class="pill" id="memberCount">0 members</span>
+        </div>
+        <div class="memberList" id="memberList"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  const db = window.firebaseDb;
+  let MEMBERS = [];
+
+  function slug(name){
+    return (name || "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "member";
+  }
+
+  function docIdFor(m){
+    return m.id || slug(m.name) || ("m_" + Date.now());
+  }
+
+  function renderMembers(){
+    const list = $("memberList");
+    const count = $("memberCount");
+    if(!list) return;
+
+    if(MEMBERS.length === 0){
+      list.innerHTML = '<div class="memberRow" style="opacity:0.7;"><div class="memberRowTitle">No members yet</div><div class="memberRowMeta">Add a member above to create their planner page.</div></div>';
+      if(count) count.textContent = "0 members";
+      return;
+    }
+
+    list.innerHTML = "";
+    for(const m of MEMBERS){
+      const row = document.createElement("div");
+      row.className = "memberRow";
+      const id = docIdFor(m);
+      const meta = [m.phone || "", m.email || ""].filter(Boolean).join(" • ");
+      row.innerHTML = `
+        <div>
+          <div class="memberRowTitle">${(m.name || "(no name)")}</div>
+          <div class="memberRowMeta">${meta || "—"} ${m.role ? "• " + m.role : ""}</div>
+        </div>
+        <div class="memberRowActions">
+          <a href="member.html?id=${encodeURIComponent(id)}" class="btn good">Open Page</a>
+          <button class="btn danger btnRemove" data-id="${id}" ${(m.id === "admin" || m.id === "jsw") ? "disabled" : ""}>Remove</button>
+        </div>
+      `;
+      list.appendChild(row);
+    }
+
+    list.querySelectorAll(".btnRemove").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if(!confirm("Remove this member?")) return;
+        try {
+          await db.collection("teamMembers").doc(id).delete();
+        } catch(e){ console.error(e); }
+      });
+    });
+
+    if(count) count.textContent = MEMBERS.length + " member" + (MEMBERS.length === 1 ? "" : "s");
+  }
+
+  $("memberForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = ($("memberName").value || "").trim();
+    const phone = ($("memberPhone").value || "").trim();
+    const email = ($("memberEmail").value || "").trim();
+    const role = ($("memberRole").value || "member").trim();
+    if(!name){ alert("Name required"); return; }
+    if(!db){ alert("Firebase not loaded"); return; }
+
+    const ts = firebase.firestore.FieldValue.serverTimestamp();
+    const docId = slug(name);
+
+    try {
+      await db.collection("teamMembers").doc(docId).set({
+        name,
+        phone: phone || null,
+        email: email || null,
+        role: role || "member",
+        active: true,
+        createdAt: ts,
+        updatedAt: ts
+      }, { merge: true });
+      $("memberName").value = "";
+      $("memberPhone").value = "";
+      $("memberEmail").value = "";
+      $("memberRole").value = "member";
+    } catch(err){ console.error(err); alert("Failed to add member"); }
+  });
+
+  function startWatch(){
+    if(!db) return;
+    db.collection("teamMembers").orderBy("name", "asc").onSnapshot(snap => {
+      MEMBERS = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.active !== false);
+      renderMembers();
+    }, err => { console.error(err); MEMBERS = []; renderMembers(); });
+  }
+
+  startWatch();
+})();
+</script>
+</body>
+</html>

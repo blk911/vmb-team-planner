@@ -1,0 +1,1637 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daily Planner (Light Mock)</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+  <script>
+    var firebaseConfig = { apiKey: "AIzaSyA9uPFEC9jTpbxGNkSuGTtaVn5ojU5Ltl8", authDomain: "vmb-team.firebaseapp.com", projectId: "vmb-team", storageBucket: "vmb-team.firebasestorage.app", messagingSenderId: "288248384764", appId: "1:288248384764:web:b406a09f7e49173c5edb79", measurementId: "G-CMRTE1WBBD" };
+    if (typeof firebase !== 'undefined') { firebase.initializeApp(firebaseConfig); window.firebaseDb = firebase.firestore(); }
+  </script>
+  <style>
+    :root{
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --panel2: #fbfcff;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --faint: #64748b;
+      --line: rgba(15,23,42,0.10);
+      --accent: #2563eb;
+      --accentSoft: rgba(37,99,235,0.10);
+      --good: #16a34a;
+      --warn: #d97706;
+      --bad: #e11d48;
+      --shadow: 0 10px 30px rgba(2,6,23,0.10);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background:
+        radial-gradient(1200px 700px at 10% -20%, rgba(37,99,235,0.12), transparent 55%),
+        radial-gradient(900px 600px at 110% 10%, rgba(22,163,74,0.08), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+    }
+
+    /* Top Nav */
+    .nav{
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(246,247,251,0.85);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+    .navInner{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding: 12px 14px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .brand{
+      display:flex; flex-direction:column; gap:2px;
+      min-width: 190px;
+    }
+    .brand .t{
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+    .brand .s{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .controls{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap: wrap;
+      justify-content:flex-end;
+    }
+
+    input, textarea, select, button{
+      font: inherit;
+      color: var(--text);
+    }
+    input, textarea, select{
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 10px;
+      outline:none;
+    }
+    textarea{ min-height: 90px; resize: vertical; }
+    input::placeholder, textarea::placeholder{ color: rgba(15,23,42,0.45); }
+    input:focus, textarea:focus, select:focus{
+      border-color: rgba(37,99,235,0.55);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+
+    .btn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 12px;
+      font-weight: 700;
+      border: 1px solid rgba(15,23,42,0.12);
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn.secondary{ background: rgba(15,23,42,0.02); }
+    .btn.good{ background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.28); }
+    .btn.danger{ background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.22); }
+    .iconBtn{
+      height: 38px;
+      padding: 0 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .pill{
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(15,23,42,0.03);
+      color: var(--muted);
+    }
+
+    /* Dropdown */
+    .dd{
+      position: relative;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    .ddPanel{
+      position:absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      width: 280px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 10px;
+      display:none;
+    }
+    .ddPanel.open{ display:block; }
+    .ddItem{
+      width:100%;
+      text-align:left;
+      padding: 10px 10px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      cursor:pointer;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      align-items:center;
+    }
+    .ddItem:hover{
+      background: rgba(37,99,235,0.08);
+      border-color: rgba(37,99,235,0.18);
+    }
+    .ddItem .d{ font-weight: 650; font-size: 13px; }
+    .ddItem .m{ font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+    /* Main layout */
+    .wrap{
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 14px;
+      display:grid;
+      grid-template-columns: 1fr 340px;
+      gap: 14px;
+      min-height: calc(100vh - 62px);
+    }
+    /* Sidebar collapse */
+    .wrap.isCollapsed{
+      grid-template-columns: 1fr;
+    }
+    .wrap.isCollapsed .sidebarPanel{
+      display:none;
+    }
+    .panel{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .panelHeader{
+      padding: 14px 14px 10px 14px;
+      border-bottom: 1px solid var(--line);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      background: linear-gradient(180deg, rgba(15,23,42,0.03), transparent 120px);
+    }
+    .panelHeader h2{
+      margin:0;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .panelBody{ padding: 14px; }
+
+    .dateBig{
+      font-size: 18px;
+      font-weight: 750;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .dateSmall{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .sectionTitle{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin: 0 0 10px 0;
+    }
+    .sectionTitle h3{
+      margin:0;
+      font-size: 13px;
+      font-family: var(--mono);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .cards{ display:flex; flex-direction:column; gap: 12px; }
+
+    .projectCard{
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card);
+      overflow:hidden;
+    }
+    .projectHead{
+      padding: 12px 12px 10px 12px;
+      border-bottom: 1px solid var(--line);
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      background: linear-gradient(180deg, rgba(15,23,42,0.03), transparent 120px);
+    }
+    .projectHeadTop{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .projectTitle{
+      display:flex; gap:10px; align-items:center; min-width: 0;
+    }
+    .projectTitle input{
+      font-weight: 750;
+      font-size: 14px;
+      padding: 9px 10px;
+      border-radius: 12px;
+    }
+
+    .projectMeta{
+      display:grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap:10px;
+      align-items:center;
+    }
+    .toggle{
+      display:flex; gap:8px; align-items:center; justify-content:flex-end;
+    }
+    .toggle button{
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: rgba(15,23,42,0.04);
+      cursor:pointer;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .toggle button.on{
+      border-color: rgba(22,163,74,0.25);
+      background: rgba(22,163,74,0.10);
+      color: rgba(22,163,74,0.95);
+    }
+
+    .kicker{
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .projectSteps textarea{
+      min-height: 62px;
+    }
+
+    .tasks{
+      padding: 12px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .taskRow{
+      display:grid;
+      grid-template-columns: 24px 1fr auto;
+      gap: 10px;
+      align-items:flex-start;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(15,23,42,0.02);
+    }
+    .taskRow.done{
+      border-color: rgba(22,163,74,0.20);
+      background: rgba(22,163,74,0.08);
+      opacity: 0.92;
+    }
+    .taskRow.blocked{
+      border-color: rgba(217,119,6,0.22);
+      background: rgba(217,119,6,0.08);
+    }
+    .taskRow .title{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .taskRow .title input{
+      border-radius: 10px;
+    }
+    .taskRow details{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(15,23,42,0.02);
+      padding: 8px 10px;
+    }
+    .taskRow summary{
+      cursor:pointer;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(15,23,42,0.78);
+      list-style: none;
+    }
+    .taskRow summary::-webkit-details-marker{ display:none; }
+    .taskTools{
+      display:flex; flex-direction:column; gap:8px; align-items:flex-end;
+    }
+    .miniSelect{
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: #fff;
+      border: 1px solid var(--line);
+      color: rgba(15,23,42,0.85);
+      outline:none;
+    }
+
+    .bottomNotes{
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed rgba(15,23,42,0.12);
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    /* Collapsible sections */
+    .collapsible.collapsed .bd{
+      display:none;
+    }
+    .box{
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel2);
+      overflow:hidden;
+    }
+    .box .hd{
+      padding: 12px 12px 10px 12px;
+      border-bottom: 1px solid var(--line);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      background: linear-gradient(180deg, rgba(15,23,42,0.03), transparent 120px);
+    }
+    .box .hd h4{
+      margin:0;
+      font-size: 13px;
+      font-family: var(--mono);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .box .bd{ padding: 12px; }
+
+    /* Right panel */
+    .focusNow{
+      font-size: 14px;
+      font-weight: 750;
+      margin: 0 0 8px 0;
+    }
+    .timer{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(15,23,42,0.75);
+      margin-top: 8px;
+    }
+    .metricRow{
+      display:flex; justify-content:space-between; align-items:center;
+      padding: 8px 0;
+      border-bottom: 1px dashed rgba(15,23,42,0.12);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(15,23,42,0.75);
+    }
+    .metricRow:last-child{ border-bottom:none; }
+
+    /* Modal */
+    /* Modal base */
+    .modalOverlay{
+      position:fixed; inset:0;
+      background: rgba(15,23,42,0.35);
+      display:none; align-items:center; justify-content:center;
+      z-index: 9999;
+      padding: 20px;
+    }
+    .modalOverlay.show{ display:flex; }
+    .modalCard{
+      width: min(860px, 96vw);
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(2,6,23,0.35);
+      border: 1px solid rgba(15,23,42,0.12);
+      overflow: hidden;
+    }
+    .modalHead{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(15,23,42,0.10);
+    }
+    .modalTitle{ font-weight: 900; font-size: 16px; }
+    .modalBody{ padding: 12px 14px 14px 14px; }
+    .modalRow{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 10px;
+      align-items:center;
+    }
+    .teamList{
+      margin-top: 10px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      max-height: 52vh;
+      overflow:auto;
+      padding-right: 4px;
+    }
+    .teamRow{
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items:center;
+      padding: 10px 12px;
+      border: 1px solid rgba(15,23,42,0.10);
+      border-radius: 12px;
+      background: rgba(15,23,42,0.02);
+    }
+    .teamRowTitle{ font-weight: 900; }
+    .teamRowMeta{ font-size: 12px; color: var(--muted); margin-top:2px; }
+    .teamActions{ display:flex; gap:8px; }
+    .modalFoot{
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(15,23,42,0.10);
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    /* Popover */
+    .popover{
+      position: absolute;
+      z-index: 9999;
+      width: 320px;
+      background: #fff;
+      border: 1px solid rgba(15,23,42,0.14);
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(2,6,23,0.2);
+      overflow: hidden;
+    }
+    .popItem{
+      padding: 10px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(15,23,42,0.06);
+    }
+    .popItem:hover{ background: rgba(15,23,42,0.04); }
+    .popItemTitle{ font-weight: 800; font-size: 14px; }
+    .popItemMeta{ font-size: 12px; color: var(--muted); margin-top: 2px; }
+    /* Project team chips */
+    .teamChips{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      align-items:center;
+    }
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(15,23,42,0.14);
+      background: rgba(15,23,42,0.03);
+      font-size: 12px;
+      color: rgba(15,23,42,0.82);
+    }
+    .chip strong{
+      font-family: var(--mono);
+      font-size: 11px;
+      opacity: 0.85;
+    }
+    .miniSelect{
+      height: 38px;
+      padding: 0 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(15,23,42,0.12);
+      background: #fff;
+      font-weight: 700;
+    }
+
+    /* TEAM MODAL */
+    .modalOverlay{
+      position: fixed;
+      inset: 0;
+      background: rgba(2,6,23,0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 9999;
+    }
+    .modalOverlay.show{ display:flex; }
+    .modalCard{
+      width: min(860px, 96vw);
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(2,6,23,0.35);
+      border: 1px solid rgba(15,23,42,0.12);
+      overflow:hidden;
+    }
+    .modalHead{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(15,23,42,0.10);
+    }
+    .modalTitle{ font-weight: 900; font-size: 16px; }
+    .modalBody{ padding: 12px 14px 14px 14px; }
+    .modalRow{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 10px;
+      align-items:center;
+    }
+    .teamList{
+      margin-top: 10px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      max-height: 52vh;
+      overflow:auto;
+      padding-right: 4px;
+    }
+    .teamRow{
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items:center;
+      padding: 10px 12px;
+      border: 1px solid rgba(15,23,42,0.10);
+      border-radius: 12px;
+      background: rgba(15,23,42,0.02);
+    }
+    .teamRowTitle{ font-weight: 900; }
+    .teamRowMeta{ font-size: 12px; color: var(--muted); margin-top:2px; }
+    .teamActions{ display:flex; gap:8px; }
+    .modalFoot{
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(15,23,42,0.10);
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+
+    @media (max-width: 1100px){
+      .wrap{ grid-template-columns: 1fr; }
+      .bottomNotes{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOP NAV -->
+  <div class="nav">
+    <div class="navInner">
+      <div class="brand">
+        <div class="t">Daily Planner</div>
+        <div class="s" id="navIso">—</div>
+      </div>
+
+      <div class="controls">
+        <button class="btn secondary" id="teamBtn">Team</button>
+        <button class="btn secondary" id="prevDayBtn">←</button>
+        <input id="datePicker" type="date" />
+        <button class="btn secondary" id="nextDayBtn">→</button>
+
+        <div class="dd" id="historyDD">
+          <button class="btn secondary" id="historyBtn">History ▾</button>
+          <div class="ddPanel" id="historyPanel" aria-hidden="true"></div>
+        </div>
+
+        <span class="pill" style="letter-spacing:0.12em;">FOCUS</span>
+        <button class="btn secondary iconBtn" id="sidebarToggleBtn" title="Toggle focus panel">&lt;&gt;</button>
+        <button class="btn secondary" id="exportBtn">Export</button>
+        <button class="btn danger" id="wipeDayBtn">Clear Day</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap" id="wrap">
+    <!-- MAIN -->
+    <div class="panel">
+      <div class="panelHeader">
+        <div>
+          <p class="dateBig" id="prettyDate">—</p>
+          <div class="dateSmall" id="isoDate">—</div>
+        </div>
+        <span class="pill" id="countsPill">0 projects</span>
+      </div>
+
+      <div class="panelBody">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom: 12px;">
+          <span class="pill">Win condition</span>
+          <input id="dailyIntent" placeholder="Ship ____ / Close ____ / Patch ____ / Calls ____" />
+          <button class="btn good" id="newProjectBtn">+ Project</button>
+          <div style="flex:1;"></div>
+          <input id="daySearch" placeholder="Search this day..." style="max-width: 260px;" />
+        </div>
+
+        <div class="sectionTitle">
+          <h3>Projects</h3>
+          <span class="pill" id="storagePill">local</span>
+        </div>
+
+        <div class="cards" id="projects"></div>
+
+        <div class="bottomNotes">
+
+
+          <div class="box collapsible" data-ui="dailyLog">
+            <div class="hd">
+              <h4>Daily Log</h4>
+              <button class="btn secondary iconBtn collapseBtn" data-toggle="dailyLog">&lt;&gt;</button>
+            </div>
+            <div class="bd">
+              <textarea id="dailyLog" placeholder="What happened today? wins, misses, blockers, decisions..."></textarea>
+            </div>
+          </div>
+
+
+          <div class="box collapsible" data-ui="carryover">
+            <div class="hd">
+              <h4>Carryover</h4>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <button class="btn secondary" id="carryToTomorrowBtn">Carry → Tomorrow</button>
+                <button class="btn secondary iconBtn collapseBtn" data-toggle="carryover">&lt;&gt;</button>
+              </div>
+            </div>
+            <div class="bd" style="color: var(--muted); font-size: 13px; line-height: 1.5;">
+              Unfinished tasks can be carried to the next day with a backlink.
+              <div style="margin-top:8px; color: var(--faint);">
+                Keep project steps clean — they become your history record.
+              </div>
+            </div>
+          </div>
+
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="panel sidebarPanel" id="sidebarPanel">
+      <div class="panelHeader">
+        <h2>Focus</h2>
+        <span class="pill" id="focusPill">idle</span>
+      </div>
+      <div class="panelBody">
+        <div class="box" style="margin-bottom:12px;">
+          <div class="hd">
+            <h4>Now</h4>
+            <button class="btn secondary" id="stopFocusBtn">Stop</button>
+          </div>
+          <div class="bd">
+            <p class="focusNow" id="focusNow">No active task</p>
+            <button class="btn good" id="startFocusBtn">Start Focus</button>
+            <div class="timer" id="timer">00:00:00</div>
+          </div>
+        </div>
+
+        <div class="box" style="margin-bottom:12px;">
+          <div class="hd">
+            <h4>Quick Capture</h4>
+            <button class="btn secondary" id="captureToTaskBtn">Convert → Task</button>
+          </div>
+          <div class="bd">
+            <textarea id="quickCapture" placeholder="Dump thoughts here. Convert to a task when ready."></textarea>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="hd">
+            <h4>Metrics</h4>
+            <span class="pill" id="metricDatePill">—</span>
+          </div>
+          <div class="bd">
+            <div class="metricRow"><span>Done</span><span id="mDone">0</span></div>
+            <div class="metricRow"><span>Blocked</span><span id="mBlocked">0</span></div>
+            <div class="metricRow"><span>Total</span><span id="mTotal">0</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+<script>
+(function(){
+  const KEY = "daily_planner.v1";
+  const $ = (id) => document.getElementById(id);
+
+  const UIKEY = "planner.ui.v1";
+  const wrapEl = document.getElementById("wrap");
+  const sidebarToggleBtn = document.getElementById("sidebarToggleBtn");
+
+  function uiLoad(){
+    try { return JSON.parse(localStorage.getItem(UIKEY) || "{}"); } catch { return {}; }
+  }
+  function uiSave(ui){
+    localStorage.setItem(UIKEY, JSON.stringify(ui));
+  }
+  function applySidebar(){
+    const ui = uiLoad();
+    const collapsed = ui.sidebarCollapsed === true; // default = false
+    wrapEl.classList.toggle("isCollapsed", collapsed);
+    if(sidebarToggleBtn) sidebarToggleBtn.textContent = collapsed ? "<>" : "<>";
+  }
+  if(sidebarToggleBtn){
+    sidebarToggleBtn.addEventListener("click", () => {
+      const ui = uiLoad();
+      ui.sidebarCollapsed = !(ui.sidebarCollapsed === true);
+      uiSave(ui);
+      applySidebar();
+    });
+  }
+
+  function applyCollapsibles(){
+    const ui = uiLoad();
+    document.querySelectorAll(".collapsible[data-ui]").forEach(el => {
+      const key = el.getAttribute("data-ui");
+      const collapsed = ui[`c_${key}`] !== false; // default TRUE (collapsed)
+      el.classList.toggle("collapsed", collapsed);
+    });
+  }
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".collapseBtn[data-toggle]");
+    if(!btn) return;
+    const key = btn.getAttribute("data-toggle");
+    const ui = uiLoad();
+    const k = `c_${key}`;
+    ui[k] = !(ui[k] === false); // if currently expanded (false), collapse; else expand
+    if(ui[k] === true) delete ui[k]; // keep storage minimal
+    uiSave(ui);
+    applyCollapsibles();
+  });
+
+  const teamBtn = $("teamBtn");
+  const teamOverlay = $("teamOverlay");
+  const teamCloseBtn = $("teamCloseBtn");
+  const teamDoneBtn = $("teamDoneBtn");
+  const teamName = $("teamName");
+  const teamPhone = $("teamPhone");
+  const teamEmail = $("teamEmail");
+  const teamAddBtn = $("teamAddBtn");
+  const teamList = $("teamList");
+  const teamCountPill = $("teamCountPill");
+
+  let teamUnsub = null;
+  let TEAM = [];
+  let didSeedTeam = false;
+
+  function openTeamModal(){
+    if(teamOverlay){ teamOverlay.classList.add("show"); teamOverlay.setAttribute("aria-hidden", "false"); }
+    renderTeamList();
+  }
+  function closeTeamModal(){
+    if(teamOverlay){ teamOverlay.classList.remove("show"); teamOverlay.setAttribute("aria-hidden", "true"); }
+  }
+  function teamNamesForProject(p){
+    const ids = Array.isArray(p.teamMemberIds) ? p.teamMemberIds : [];
+    const map = new Map(TEAM.map(m => [m.id, m]));
+    return ids.map(id => map.get(id)).filter(Boolean);
+  }
+  function getMemberById(id){
+    return TEAM.find(m => m.id === id) || null;
+  }
+  function firstName(name){
+    return (name || "").trim().split(/\s+/)[0] || "";
+  }
+  function memberMeta(m){
+    const phone = m.phone ? "cell " + m.phone : "cell —";
+    const email = m.email ? " • " + m.email : "";
+    return phone + email;
+  }
+  let activePopover = null;
+  function closePopover(){
+    if(activePopover){ activePopover.remove(); activePopover = null; }
+  }
+  async function seedDefaultTeamIfEmpty(){
+    if(didSeedTeam) return;
+    if(TEAM.length !== 0) return;
+    didSeedTeam = true;
+    const db = window.firebaseDb;
+    if(!db) return;
+    const ts = (typeof firebase !== "undefined" && firebase.firestore && firebase.firestore.FieldValue) ? firebase.firestore.FieldValue.serverTimestamp() : null;
+    const currentUser = null;
+    try {
+      await db.collection("teamMembers").doc("admin").set({
+        name: "ADMIN",
+        phone: "000000-0000",
+        email: "admin@venmebaby.com",
+        role: "admin",
+        active: true,
+        createdAt: ts,
+        createdBy: currentUser && currentUser.email ? currentUser.email : null
+      }, { merge: true });
+      await db.collection("teamMembers").doc("jsw").set({
+        name: "JSW",
+        phone: "512-555-1212",
+        email: "blk911@gmail.com",
+        role: "owner",
+        active: true,
+        createdAt: ts,
+        createdBy: currentUser && currentUser.email ? currentUser.email : null
+      }, { merge: true });
+    } catch(e) { console.error(e); didSeedTeam = false; }
+  }
+  function renderTeamList(){
+    if(!teamList) return;
+    if(TEAM.length === 0){
+      teamList.innerHTML = "<div class=\"pill\">No members yet.</div>";
+      if(teamCountPill) teamCountPill.textContent = "0 members";
+      return;
+    }
+    teamList.innerHTML = "";
+    const db = loadAll();
+    const entry = ensureDay(db, currentDay);
+    for(const m of TEAM){
+      const row = document.createElement("div");
+      row.className = "teamRow";
+      const left = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "teamRowTitle";
+      title.textContent = m.name || "(no name)";
+      const meta = document.createElement("div");
+      meta.className = "teamRowMeta";
+      meta.textContent = memberMeta(m);
+      left.appendChild(title);
+      left.appendChild(meta);
+      const actions = document.createElement("div");
+      actions.className = "teamActions";
+      const del = document.createElement("button");
+      del.className = "btn danger";
+      del.textContent = "Remove";
+      del.disabled = (m.id === "admin" || m.id === "jsw");
+      del.addEventListener("click", async () => {
+        if(!confirm("Remove " + (m.name || "this member") + "?")) return;
+        await removeTeamMember(m.id);
+        for(const p of entry.projects){
+          if(p.teamMemberId === m.id) p.teamMemberId = "";
+        }
+        persistEntry(entry);
+        render(loadAll());
+      });
+      actions.appendChild(del);
+      row.appendChild(left);
+      row.appendChild(actions);
+      teamList.appendChild(row);
+    }
+    if(teamCountPill) teamCountPill.textContent = TEAM.length + " member" + (TEAM.length === 1 ? "" : "s");
+  }
+  async function addTeamMember(){
+    const name = (teamName && teamName.value || "").trim();
+    const phone = (teamPhone && teamPhone.value || "").trim();
+    const email = (teamEmail && teamEmail.value || "").trim();
+    if(!name) return;
+    const db = window.firebaseDb;
+    if(!db){ if(teamName) teamName.value = ""; if(teamPhone) teamPhone.value = ""; if(teamEmail) teamEmail.value = ""; return; }
+    const ts = (typeof firebase !== "undefined" && firebase.firestore && firebase.firestore.FieldValue) ? firebase.firestore.FieldValue.serverTimestamp() : null;
+    const currentUser = null;
+    try {
+      await db.collection("teamMembers").add({
+        name,
+        phone: phone || null,
+        email: email || null,
+        role: "member",
+        active: true,
+        createdAt: ts,
+        createdBy: currentUser && currentUser.email ? currentUser.email : null
+      });
+      if(teamName) teamName.value = "";
+      if(teamPhone) teamPhone.value = "";
+      if(teamEmail) teamEmail.value = "";
+    } catch(e){ console.error(e); }
+  }
+  async function removeTeamMember(memberId){
+    const db = window.firebaseDb;
+    if(!db) return;
+    try { await db.collection("teamMembers").doc(memberId).delete(); } catch(e){ console.error(e); }
+  }
+  function startTeamWatch(){
+    const db = window.firebaseDb;
+    if(!db) return;
+    if(teamUnsub) teamUnsub();
+    const q = db.collection("teamMembers").orderBy("name", "asc");
+    teamUnsub = q.onSnapshot(snap => {
+      TEAM = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.active !== false);
+      if(teamCountPill) teamCountPill.textContent = TEAM.length + " member" + (TEAM.length === 1 ? "" : "s");
+      seedDefaultTeamIfEmpty().catch(console.error);
+      renderTeamList();
+    }, (err) => { console.error("teamMembers watch error:", err); TEAM = []; });
+  }
+
+  function openTeamPopover(anchorEl, project, entry){
+    closePopover();
+    const pop = document.createElement("div");
+    pop.className = "popover";
+    const rect = anchorEl.getBoundingClientRect();
+    pop.style.left = rect.left + "px";
+    pop.style.top = (rect.bottom + 6) + "px";
+    const head = document.createElement("div");
+    head.style.padding = "10px 12px";
+    head.style.borderBottom = "1px solid rgba(15,23,42,0.08)";
+    const search = document.createElement("input");
+    search.placeholder = "Search team...";
+    search.style.width = "100%";
+    search.style.padding = "8px 10px";
+    search.style.borderRadius = "8px";
+    search.style.border = "1px solid rgba(15,23,42,0.12)";
+    head.appendChild(search);
+    const list = document.createElement("div");
+    list.style.maxHeight = "240px";
+    list.style.overflowY = "auto";
+    const footer = document.createElement("div");
+    footer.style.padding = "8px 12px";
+    footer.style.borderTop = "1px solid rgba(15,23,42,0.08)";
+    const noneBtn = document.createElement("button");
+    noneBtn.className = "btn secondary";
+    noneBtn.textContent = "(none)";
+    noneBtn.addEventListener("click", () => {
+      project.teamMemberId = "";
+      persistEntry(entry);
+      render(loadAll());
+      closePopover();
+    });
+    footer.appendChild(noneBtn);
+    function renderList(){
+      const q = (search.value || "").trim().toLowerCase();
+      const filtered = !q ? TEAM : TEAM.filter(m => (m.name || "").toLowerCase().includes(q) || (m.email || "").toLowerCase().includes(q));
+      list.innerHTML = "";
+      for(const m of filtered){
+        const item = document.createElement("div");
+        item.className = "popItem";
+        item.addEventListener("click", () => {
+          project.teamMemberId = m.id;
+          persistEntry(entry);
+          render(loadAll());
+          closePopover();
+        });
+        const t = document.createElement("div");
+        t.className = "popItemTitle";
+        t.textContent = m.name || "(no name)";
+        const meta = document.createElement("div");
+        meta.className = "popItemMeta";
+        meta.textContent = memberMeta(m);
+        item.appendChild(t);
+        item.appendChild(meta);
+        list.appendChild(item);
+      }
+      if(filtered.length === 0){
+        list.innerHTML = "<div class=\"popItem\"><div class=\"popItemTitle\">No matches</div><div class=\"popItemMeta\">Try a different search.</div></div>";
+      }
+    }
+    search.addEventListener("input", renderList);
+    pop.appendChild(head);
+    pop.appendChild(list);
+    pop.appendChild(footer);
+    document.body.appendChild(pop);
+    activePopover = pop;
+    renderList();
+    setTimeout(() => search.focus(), 0);
+    pop.addEventListener("click", (e) => e.stopPropagation());
+  }
+  document.addEventListener("click", (e) => {
+    if(activePopover && !activePopover.contains(e.target)){
+      const btn = e.target.closest && e.target.closest("button");
+      if(btn && btn.textContent === "Team") return;
+      closePopover();
+    }
+  }, true);
+  document.addEventListener("keydown", (e) => { if(e.key === "Escape") closePopover(); });
+
+  const datePicker = $("datePicker");
+  const historyBtn = $("historyBtn");
+  const historyPanel = $("historyPanel");
+  const historyDD = $("historyDD");
+
+  const prettyDate = $("prettyDate");
+  const isoDate = $("isoDate");
+  const navIso = $("navIso");
+
+  const projectsEl = $("projects");
+  const countsPill = $("countsPill");
+  const storagePill = $("storagePill");
+
+  const dailyIntent = $("dailyIntent");
+  const dailyLog = $("dailyLog");
+  const daySearch = $("daySearch");
+
+  const focusNow = $("focusNow");
+  const focusPill = $("focusPill");
+  const timerEl = $("timer");
+
+  const metricDatePill = $("metricDatePill");
+  const mDone = $("mDone");
+  const mBlocked = $("mBlocked");
+  const mTotal = $("mTotal");
+
+  const DEFAULT_TEAM = "team";
+  const DEFAULT_ASSIGNEE = "single person";
+  const DEFAULT_JSW = true;
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function iso(d){
+    const dt = new Date(d);
+    return dt.getFullYear() + "-" + pad(dt.getMonth()+1) + "-" + pad(dt.getDate());
+  }
+  function pretty(isoStr){
+    const dt = new Date(isoStr + "T00:00:00");
+    return dt.toLocaleDateString(undefined, { weekday:"long", year:"numeric", month:"short", day:"numeric" });
+  }
+  function loadAll(){
+    try { return JSON.parse(localStorage.getItem(KEY) || "{}"); }
+    catch { return {}; }
+  }
+  function saveAll(db){ localStorage.setItem(KEY, JSON.stringify(db)); }
+  function ensureDay(db, day){
+    if(!db[day]){
+      db[day] = { date: day, dailyIntent:"", dailyLog:"", projects:[], focus:{active:false, startedAt:null, taskRef:null} };
+    }
+    return db[day];
+  }
+  function uid(prefix="id"){ return prefix + "_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16); }
+
+  let currentDay = iso(new Date());
+  let focusTimer = null;
+  let focusStartTs = null;
+
+  function countTasks(entry){
+    let total=0, done=0, blocked=0;
+    for(const p of entry.projects){
+      for(const t of (p.tasks||[])){
+        total++;
+        if(t.status==="done") done++;
+        if(t.status==="blocked") blocked++;
+      }
+    }
+    return { total, done, blocked };
+  }
+
+  function persistEntry(entry){
+    const db = loadAll();
+    db[entry.date] = entry;
+    saveAll(db);
+  }
+
+  function setDay(day){
+    const db = loadAll();
+    ensureDay(db, day);
+    currentDay = day;
+    datePicker.value = day;
+    saveAll(db);
+    render(db);
+  }
+
+  // Dropdown open/close
+  function openHistory(){ historyPanel.classList.add("open"); historyPanel.setAttribute("aria-hidden","false"); }
+  function closeHistory(){ historyPanel.classList.remove("open"); historyPanel.setAttribute("aria-hidden","true"); }
+  function toggleHistory(){
+    if(historyPanel.classList.contains("open")) closeHistory();
+    else openHistory();
+  }
+
+  function renderHistoryDropdown(db){
+    historyPanel.innerHTML = "";
+    // show 30 most recent days (including ones w/out data)
+    const days = [];
+    for(let i=0;i<30;i++){
+      const dt = new Date(currentDay + "T00:00:00");
+      dt.setDate(dt.getDate() - i);
+      days.push(iso(dt));
+    }
+
+    for(const day of days){
+      const entry = db[day];
+      const c = entry ? countTasks(entry) : {done:0,total:0};
+      const btn = document.createElement("button");
+      btn.className = "ddItem";
+      btn.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <div class="d">${day === iso(new Date()) ? "Today" : day}</div>
+          <div class="m">${pretty(day)}</div>
+        </div>
+        <span class="pill">${c.done}/${c.total || 0}</span>
+      `;
+      btn.addEventListener("click", () => {
+        closeHistory();
+        setDay(day);
+      });
+      historyPanel.appendChild(btn);
+    }
+  }
+
+  function resolveTaskLabel(entry, taskRef){
+    if(!taskRef) return null;
+    const { projectId, taskId } = taskRef;
+    const p = entry.projects.find(x => x.id === projectId);
+    const t = p?.tasks?.find(x => x.id === taskId);
+    if(!p || !t) return null;
+    const title = (t.title || "").trim() || "Untitled task";
+    const proj = (p.title || "").trim() || "Untitled project";
+    return `${proj}: ${title}`;
+  }
+
+  function startTimerFrom(startedAt){
+    stopTimer();
+    if(!startedAt) return;
+    focusStartTs = startedAt;
+    focusTimer = setInterval(() => {
+      const ms = Date.now() - focusStartTs;
+      const s = Math.floor(ms/1000);
+      const hh = pad(Math.floor(s/3600));
+      const mm = pad(Math.floor((s%3600)/60));
+      const ss = pad(s%60);
+      timerEl.textContent = `${hh}:${mm}:${ss}`;
+    }, 250);
+  }
+  function stopTimer(){
+    if(focusTimer) clearInterval(focusTimer);
+    focusTimer = null;
+    timerEl.textContent = "00:00:00";
+  }
+
+  function startFocus(entry, taskRef){
+    entry.focus = entry.focus || {};
+    entry.focus.active = true;
+    entry.focus.startedAt = Date.now();
+    entry.focus.taskRef = taskRef;
+    persistEntry(entry);
+    render(loadAll());
+  }
+  function stopFocus(){
+    const db = loadAll();
+    const entry = ensureDay(db, currentDay);
+    entry.focus = { active:false, startedAt:null, taskRef:null };
+    saveAll(db);
+    render(db);
+  }
+
+  function renderProjects(entry){
+    const q = (daySearch.value || "").trim().toLowerCase();
+    projectsEl.innerHTML = "";
+
+    for(const [pi, p] of entry.projects.entries()){
+      if(!Array.isArray(p.teamMemberIds)) p.teamMemberIds = [];
+      if(!p.teamMemberId) p.teamMemberId = "";
+      const matches =
+        !q ||
+        (p.title||"").toLowerCase().includes(q) ||
+        (p.assignee||"").toLowerCase().includes(q) ||
+        (p.team||"").toLowerCase().includes(q) ||
+        (p.tasks||[]).some(t =>
+          (t.title||"").toLowerCase().includes(q) ||
+          (t.notes||"").toLowerCase().includes(q) ||
+          (t.steps||"").toLowerCase().includes(q)
+        );
+      if(!matches) continue;
+
+      const card = document.createElement("div");
+      card.className = "projectCard";
+
+      const head = document.createElement("div");
+      head.className = "projectHead";
+
+      const top = document.createElement("div");
+      top.className = "projectHeadTop";
+
+      const titleWrap = document.createElement("div");
+      titleWrap.className = "projectTitle";
+
+      const titleInput = document.createElement("input");
+      titleInput.value = p.title || "";
+      titleInput.placeholder = "Project Title";
+      titleInput.addEventListener("input", () => { p.title = titleInput.value; persistEntry(entry); });
+
+      titleWrap.appendChild(titleInput);
+
+      const chips = document.createElement("div");
+      chips.className = "teamChips";
+      chips.style.marginTop = "8px";
+      const ownerChip = document.createElement("span");
+      ownerChip.className = "chip";
+      ownerChip.innerHTML = "<strong>OWNER</strong> JSW";
+      chips.appendChild(ownerChip);
+      const assigned = TEAM.find(m => m.id === p.teamMemberId) || null;
+      if(assigned){
+        const who = document.createElement("button");
+        who.className = "btn secondary";
+        who.textContent = firstName(assigned.name);
+        who.title = (assigned.name || "") + (assigned.email ? " • " + assigned.email : "");
+        who.addEventListener("click", () => {
+          p.teamMemberId = "";
+          persistEntry(entry);
+          render(loadAll());
+        });
+        chips.appendChild(who);
+      }
+      const teamBtn = document.createElement("button");
+      teamBtn.className = "btn secondary";
+      teamBtn.textContent = "Team";
+      teamBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        openTeamPopover(teamBtn, p, entry);
+      });
+      chips.appendChild(teamBtn);
+      titleWrap.appendChild(chips);
+
+      const rightBtns = document.createElement("div");
+      rightBtns.style.display = "flex";
+      rightBtns.style.gap = "10px";
+
+      const addTaskBtn = document.createElement("button");
+      addTaskBtn.className = "btn good";
+      addTaskBtn.textContent = "+ Task";
+      addTaskBtn.addEventListener("click", () => {
+        p.tasks = p.tasks || [];
+        p.tasks.push({ id: uid("task"), title:"", status:"todo", steps:"", notes:"", createdAt:Date.now(), completedAt:null, carriedFrom:null });
+        persistEntry(entry);
+        render(loadAll());
+      });
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn danger";
+      delBtn.textContent = "Delete";
+      delBtn.addEventListener("click", () => {
+        entry.projects.splice(pi, 1);
+        persistEntry(entry);
+        render(loadAll());
+      });
+
+      rightBtns.appendChild(addTaskBtn);
+      rightBtns.appendChild(delBtn);
+
+      top.appendChild(titleWrap);
+      top.appendChild(rightBtns);
+
+      head.appendChild(top);
+
+      const tasks = document.createElement("div");
+      tasks.className = "tasks";
+
+      (p.tasks || []).forEach((t, ti) => {
+        const row = document.createElement("div");
+        row.className = "taskRow" + (t.status === "done" ? " done" : t.status === "blocked" ? " blocked" : "");
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = (t.status === "done");
+        cb.style.marginTop = "4px";
+        cb.addEventListener("change", () => {
+          t.status = cb.checked ? "done" : "todo";
+          t.completedAt = cb.checked ? Date.now() : null;
+          persistEntry(entry);
+          render(loadAll());
+        });
+
+        const titleCol = document.createElement("div");
+        titleCol.className = "title";
+
+        const tTitle = document.createElement("input");
+        tTitle.value = t.title || "";
+        tTitle.placeholder = "Action item title";
+        tTitle.addEventListener("input", () => { t.title = tTitle.value; persistEntry(entry); });
+
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = "Steps + Notes";
+
+        const inner = document.createElement("div");
+        inner.style.display = "grid";
+        inner.style.gridTemplateColumns = "1fr 1fr";
+        inner.style.gap = "10px";
+        inner.style.marginTop = "10px";
+
+        const tSteps = document.createElement("textarea");
+        tSteps.value = t.steps || "";
+        tSteps.placeholder = "Steps (task-level)";
+        tSteps.addEventListener("input", () => { t.steps = tSteps.value; persistEntry(entry); });
+
+        const tNotes = document.createElement("textarea");
+        tNotes.value = t.notes || "";
+        tNotes.placeholder = "Notes";
+        tNotes.addEventListener("input", () => { t.notes = tNotes.value; persistEntry(entry); });
+
+        inner.appendChild(tSteps);
+        inner.appendChild(tNotes);
+
+        details.appendChild(summary);
+        details.appendChild(inner);
+
+        titleCol.appendChild(tTitle);
+        titleCol.appendChild(details);
+
+        const tools = document.createElement("div");
+        tools.className = "taskTools";
+
+        const status = document.createElement("select");
+        status.className = "miniSelect";
+        status.innerHTML = `
+          <option value="todo">todo</option>
+          <option value="doing">doing</option>
+          <option value="blocked">blocked</option>
+          <option value="done">done</option>
+        `;
+        status.value = t.status || "todo";
+        status.addEventListener("change", () => {
+          t.status = status.value;
+          t.completedAt = (t.status === "done") ? Date.now() : null;
+          persistEntry(entry);
+          render(loadAll());
+        });
+
+        const focusBtn = document.createElement("button");
+        focusBtn.className = "btn secondary";
+        focusBtn.textContent = "Focus";
+        focusBtn.addEventListener("click", () => startFocus(entry, { projectId: p.id, taskId: t.id }));
+
+        const delTask = document.createElement("button");
+        delTask.className = "btn danger";
+        delTask.textContent = "Remove";
+        delTask.addEventListener("click", () => {
+          p.tasks.splice(ti, 1);
+          persistEntry(entry);
+          render(loadAll());
+        });
+
+        tools.appendChild(status);
+        tools.appendChild(focusBtn);
+        tools.appendChild(delTask);
+
+        row.appendChild(cb);
+        row.appendChild(titleCol);
+        row.appendChild(tools);
+        tasks.appendChild(row);
+      });
+
+      card.appendChild(head);
+      card.appendChild(tasks);
+      projectsEl.appendChild(card);
+    }
+  }
+
+  function render(db){
+    const entry = ensureDay(db, currentDay);
+
+    prettyDate.textContent = pretty(currentDay);
+    isoDate.textContent = currentDay;
+    navIso.textContent = currentDay;
+    metricDatePill.textContent = currentDay;
+
+    dailyIntent.value = entry.dailyIntent || "";
+    dailyLog.value = entry.dailyLog || "";
+
+    const c = countTasks(entry);
+    countsPill.textContent = `${entry.projects.length} project${entry.projects.length===1?"":"s"}`;
+    mDone.textContent = c.done;
+    mBlocked.textContent = c.blocked;
+    mTotal.textContent = c.total;
+
+    renderProjects(entry);
+    renderHistoryDropdown(db);
+
+    // Focus state
+    if(entry.focus?.active && entry.focus.startedAt){
+      focusPill.textContent = "active";
+      focusStartTs = entry.focus.startedAt;
+      focusNow.textContent = resolveTaskLabel(entry, entry.focus.taskRef) || "Focus active";
+      startTimerFrom(focusStartTs);
+    } else {
+      focusPill.textContent = "idle";
+      focusNow.textContent = "No active task";
+      stopTimer();
+    }
+
+    storagePill.textContent = "local";
+  }
+
+  // Nav events
+  $("prevDayBtn").addEventListener("click", () => {
+    const dt = new Date(currentDay + "T00:00:00");
+    dt.setDate(dt.getDate()-1);
+    setDay(iso(dt));
+  });
+  $("nextDayBtn").addEventListener("click", () => {
+    const dt = new Date(currentDay + "T00:00:00");
+    dt.setDate(dt.getDate()+1);
+    setDay(iso(dt));
+  });
+  datePicker.addEventListener("change", () => { if(datePicker.value) setDay(datePicker.value); });
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const teamBtn2 = document.getElementById("teamBtn");
+    if(!teamBtn2) return console.warn("[planner] #teamBtn not found at DOMContentLoaded");
+    teamBtn2.addEventListener("click", () => {
+      try {
+        openTeamModal();
+        console.log("[planner] Team modal opened");
+      } catch (e) {
+        console.error("[planner] openTeamModal failed", e);
+        alert("Team modal failed to open — check Console (F12).");
+      }
+    });
+  });
+  teamCloseBtn && teamCloseBtn.addEventListener("click", closeTeamModal);
+  teamDoneBtn && teamDoneBtn.addEventListener("click", closeTeamModal);
+  teamOverlay && teamOverlay.addEventListener("click", (e) => { if(e.target === teamOverlay) closeTeamModal(); });
+  teamAddBtn && teamAddBtn.addEventListener("click", () => addTeamMember().catch(console.error));
+
+  // History dropdown
+  historyBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleHistory(); });
+  document.addEventListener("click", (e) => {
+    if(!historyDD.contains(e.target)) closeHistory();
+  });
+
+  // Inputs
+  dailyIntent.addEventListener("input", () => {
+    const db = loadAll();
+    const entry = ensureDay(db, currentDay);
+    entry.dailyIntent = dailyIntent.value;
+    saveAll(db);
+  });
+  dailyLog.addEventListener("input", () => {
+    const db = loadAll();
+    const entry = ensureDay(db, currentDay);
+    entry.dailyLog = dailyLog.value;
+    saveAll(db);
+  });
+  daySearch.addEventListener("input", () => render(loadAll()));
+
+  // Buttons
+  $("newProjectBtn").addEventListener("click", () => {
+    const db = loadAll();
+    const entry = ensureDay(db, currentDay);
+    entry.projects.push({
+      id: uid("proj"),
+      title: "",
+      teamMemberIds: [],
+      tasks: []
+    });
+    saveAll(db);
+    render(db);
+  });
+
+  $("wipeDayBtn").addEventListener("click", () => {
+    const db = loadAll();
+    db[currentDay] = { date: currentDay, dailyIntent:"", dailyLog:"", projects:[], focus:{active:false, startedAt:null, taskRef:null} };
+    saveAll(db);
+    render(db);
+  });
+
+  $("exportBtn").addEventListener("click", () => {
+    const db = loadAll();
+    const blob = new Blob([JSON.stringify(db, null, 2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "daily_planner_export.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  $("carryToTomorrowBtn").addEventListener("click", () => {
+    const db = loadAll();
+    const today = ensureDay(db, currentDay);
+
+    const dt = new Date(currentDay + "T00:00:00");
+    dt.setDate(dt.getDate()+1);
+    const tomorrowDay = iso(dt);
+    const tomorrow = ensureDay(db, tomorrowDay);
+
+    const byTitle = new Map();
+    for(const p of tomorrow.projects){
+      byTitle.set((p.title||"").trim().toLowerCase(), p);
+    }
+
+    for(const p of today.projects){
+      const titleKey = (p.title||"").trim().toLowerCase();
+      if(!titleKey) continue;
+
+      let tp = byTitle.get(titleKey);
+      if(!tp){
+        tp = { id: uid("proj"), title: p.title||"", assignee:p.assignee??DEFAULT_ASSIGNEE, team:p.team??DEFAULT_TEAM, jsw:(p.jsw??DEFAULT_JSW), teamMemberIds: Array.isArray(p.teamMemberIds) ? [...p.teamMemberIds] : [], tasks:[] };
+        tomorrow.projects.push(tp);
+        byTitle.set(titleKey, tp);
+      }
+
+      for(const t of (p.tasks||[])){
+        if(t.status==="done") continue;
+        tp.tasks.push({ id: uid("task"), title:t.title||"", status:"todo", steps:t.steps||"", notes:t.notes||"", createdAt:Date.now(), completedAt:null, carriedFrom: currentDay });
+      }
+    }
+
+    saveAll(db);
+    setDay(tomorrowDay);
+  });
+
+  $("startFocusBtn").addEventListener("click", () => {
+    const db = loadAll();
+    const entry = ensureDay(db, currentDay);
+    entry.focus = entry.focus || {};
+    entry.focus.active = true;
+    entry.focus.startedAt = Date.now();
+    saveAll(db);
+    render(db);
+  });
+  $("stopFocusBtn").addEventListener("click", () => stopFocus());
+
+  $("captureToTaskBtn").addEventListener("click", () => {
+    const text = ($("quickCapture").value || "").trim();
+    if(!text) return;
+
+    const db = loadAll();
+    const entry = ensureDay(db, currentDay);
+
+    if(entry.projects.length === 0){
+      entry.projects.push({
+        id: uid("proj"),
+        title: "Inbox",
+        teamMemberIds: [],
+        tasks: []
+      });
+    }
+    const p = entry.projects[0];
+    p.tasks = p.tasks || [];
+    p.tasks.push({ id: uid("task"), title:text, status:"todo", steps:"", notes:"from quick capture", createdAt:Date.now(), completedAt:null, carriedFrom:null });
+
+    $("quickCapture").value = "";
+    saveAll(db);
+    render(db);
+  });
+
+  // Init
+  datePicker.value = currentDay;
+  const db = loadAll();
+  ensureDay(db, currentDay);
+  saveAll(db);
+  render(db);
+  applySidebar();
+  applyCollapsibles();
+  startTeamWatch();
+
+})();
+</script>
+
+  <!-- TEAM MODAL -->
+  <div class="modalOverlay" id="teamOverlay" aria-hidden="true">
+    <div class="modalCard">
+      <div class="modalHead">
+        <div class="modalTitle">Team</div>
+        <button class="btn secondary iconBtn" id="teamCloseBtn" title="Close">&times;</button>
+      </div>
+      <div class="modalBody">
+        <div class="modalRow">
+          <input id="teamName" placeholder="Name (e.g., Taylor)" />
+          <input id="teamPhone" placeholder="Cell (e.g., 512-555-1212)" />
+          <input id="teamEmail" placeholder="Email (optional)" />
+          <button class="btn good" id="teamAddBtn">Add</button>
+        </div>
+        <div class="teamList" id="teamList"></div>
+        <div class="modalFoot">
+          <div class="pill" id="teamCountPill">0 members</div>
+          <div style="flex:1;"></div>
+          <button class="btn secondary" id="teamDoneBtn">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

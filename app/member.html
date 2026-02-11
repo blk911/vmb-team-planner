@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Redirecting…</title>
+</head>
+<body>
+  <p>Redirecting to planner…</p>
+  <script>
+    const id = new URLSearchParams(location.search).get('id');
+    if (id) location.replace('index.html?member=' + encodeURIComponent(id));
+    else location.replace('admin.html');
+  </script>
+</body>
+</html>

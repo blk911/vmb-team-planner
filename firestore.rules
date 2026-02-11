@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+
+    function isTeam() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email in [
+          "blk911@gmail.com",
+          "TEAMMATE1@EMAIL.COM",
+          "TEAMMATE2@EMAIL.COM"
+        ];
+    }
+
+
+    match /plannerDays/{dayId} {
+      allow read, write: if isTeam();
+    }
+    match /teamMembers/{memberId} {
+      allow read, write: if isTeam();
+    }
+  }
+}
