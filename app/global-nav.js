@@ -1,0 +1,66 @@
+(function(){
+  const DEFAULT_LINKS = [
+    { id: "planner", label: "VMB Team", href: "/" },
+    { id: "deck", label: "Deck", href: "https://vmb-team-deck.vercel.app/" },
+    { id: "targets", label: "Targets", href: "https://targets-tech-first.vercel.app/" }
+  ];
+
+  function normalizeUrl(url){
+    try {
+      return new URL(url, window.location.origin);
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function isActiveLink(href){
+    const target = normalizeUrl(href);
+    if(!target) return false;
+    const here = window.location;
+    if(target.origin !== here.origin){
+      return target.hostname === here.hostname;
+    }
+    if(target.pathname === "/"){
+      return here.pathname === "/" || here.pathname.endsWith("/index.html");
+    }
+    return here.pathname === target.pathname || here.pathname.startsWith(target.pathname + "/");
+  }
+
+  function resolveLinks(){
+    if(Array.isArray(window.VMB_GLOBAL_NAV_LINKS) && window.VMB_GLOBAL_NAV_LINKS.length){
+      return window.VMB_GLOBAL_NAV_LINKS;
+    }
+    return DEFAULT_LINKS;
+  }
+
+  function renderInto(slot){
+    if(!slot) return;
+    slot.innerHTML = "";
+    const links = resolveLinks();
+    for(const link of links){
+      if(!link || !link.href || !link.label) continue;
+      const a = document.createElement("a");
+      a.className = "btn secondary globalNavBtn";
+      a.href = link.href;
+      a.textContent = link.label;
+      a.title = link.label;
+      if(isActiveLink(link.href)){
+        a.classList.add("isActive");
+        a.setAttribute("aria-current", "page");
+      }
+      slot.appendChild(a);
+    }
+  }
+
+  function mountGlobalNav(){
+    const slots = document.querySelectorAll("[data-global-nav-slot]");
+    for(const slot of slots) renderInto(slot);
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", mountGlobalNav);
+  } else {
+    mountGlobalNav();
+  }
+})();
+

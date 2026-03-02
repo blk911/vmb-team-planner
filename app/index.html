@@ -5,10 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Daily Planner (Light Mock)</title>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+  <script src="global-nav.js" defer></script>
   <script>
     var firebaseConfig = { apiKey: "AIzaSyA9uPFEC9jTpbxGNkSuGTtaVn5ojU5Ltl8", authDomain: "vmb-team.firebaseapp.com", projectId: "vmb-team", storageBucket: "vmb-team.firebasestorage.app", messagingSenderId: "288248384764", appId: "1:288248384764:web:b406a09f7e49173c5edb79", measurementId: "G-CMRTE1WBBD" };
-    if (typeof firebase !== 'undefined') { firebase.initializeApp(firebaseConfig); window.firebaseDb = firebase.firestore(); }
+    if (typeof firebase !== 'undefined') {
+      if(!firebase.apps || firebase.apps.length === 0) firebase.initializeApp(firebaseConfig);
+      window.firebaseDb = firebase.firestore();
+      window.firebaseAuth = firebase.auth ? firebase.auth() : null;
+    }
   </script>
   <style>
     :root{
@@ -97,6 +103,17 @@
       text-decoration: none;
     }
     .navTeamMembers:hover{ color: var(--text); }
+    .globalTopLinks{
+      display:flex;
+      align-items:center;
+      gap: 8px;
+    }
+    .globalNavBtn{ white-space: nowrap; }
+    .globalNavBtn.isActive{
+      background: rgba(37,99,235,0.16);
+      border-color: rgba(37,99,235,0.28);
+      color: #1d4ed8;
+    }
     .topbarRight{
       display:flex;
       justify-content:flex-end;
@@ -448,6 +465,10 @@
       background: rgba(220,38,38,0.12);
       color: rgba(220,38,38,0.95);
     }
+    .projectStatusIndicators .dueTodayPill.dueTodayOverdue{
+      background: rgba(124, 22, 13, 0.16);
+      color: rgba(124, 22, 13, 0.98);
+    }
     .projectTitle{
       display:flex; gap:6px; align-items:center; min-width: 0; flex: 1;
     }
@@ -565,7 +586,7 @@
       content: "▾ ";
     }
     .taskStepsWrap{
-      padding-left: 40px;
+      padding-left: 8px;
     }
     .taskTools{
       display:flex;
@@ -914,6 +935,38 @@
       align-items:center;
       gap:10px;
     }
+    /* AUTH GATE */
+    .authGate{
+      position: fixed;
+      inset: 0;
+      z-index: 10050;
+      background: rgba(2,6,23,0.55);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: 16px;
+    }
+    .authCard{
+      width: min(420px, 96vw);
+      background:#fff;
+      border:1px solid rgba(15,23,42,0.12);
+      border-radius:16px;
+      box-shadow:0 20px 60px rgba(2,6,23,0.35);
+      padding: 14px;
+    }
+    .authTitle{ font-weight:900; font-size:18px; }
+    .authSub{ color: var(--muted); font-size:12px; margin-top:2px; margin-bottom:10px; }
+    .authRow{ display:flex; gap:10px; margin-top:10px; }
+    .authRow input{
+      width:100%;
+      height:40px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,0.12);
+      padding:0 12px;
+      font:inherit;
+    }
+    .authRowButtons{ justify-content:flex-start; }
+    .authErr{ margin-top:10px; color:#b91c1c; font-size:12px; }
 
     @media (max-width: 1100px){
       .wrap{ grid-template-columns: 1fr; }
@@ -946,6 +999,8 @@
     </div>
 
     <div class="topbarRight">
+      <div class="globalTopLinks" data-global-nav-slot></div>
+      <a href="mem-archive.html" class="btn secondary" id="memArchiveLink">MEM ARCHIVE</a>
       <button class="btn secondary" id="teamBtn" title="Add / edit team">Team</button>
       <button class="btn secondary" id="navFocusBtn">Focus</button>
       <a href="admin.html" class="btn secondary" id="adminLink">Admin</a>
@@ -984,7 +1039,7 @@
           <div class="pageLoadSummary" id="pageLoadSummary">0 projects, 0 tasks</div>
         </div>
 
-        <div class="sectionTitle">
+        <div class="sectionTitle" id="projectsSectionTitle">
           <h3>Projects</h3>
           <span class="pill" id="storagePill">local</span>
         </div>
@@ -1101,11 +1156,46 @@
     </div>
   </div>
 
+  <!-- AUTH GATE (Email/Password) -->
+  <div id="authGate" class="authGate" style="display:none;">
+    <div class="authCard">
+      <div class="authTitle">Sign in</div>
+      <div class="authSub">Team-only access</div>
+
+      <div class="authRow">
+        <input id="authEmail" type="email" placeholder="Email" autocomplete="email" />
+      </div>
+      <div class="authRow">
+        <input id="authPass" type="password" placeholder="Password" autocomplete="current-password" />
+      </div>
+
+      <div class="authRow authRowButtons">
+        <button class="btn good" id="authSignInBtn">Sign in</button>
+        <button class="btn secondary" id="authCreateBtn" style="display:none;">Create User</button>
+        <button class="btn secondary" id="authSignOutBtn" style="display:none;">Sign out</button>
+      </div>
+
+      <div class="authErr" id="authErr" style="display:none;"></div>
+    </div>
+  </div>
+
 <script>
 (function(){
   const urlParams = new URLSearchParams(location.search);
-  const MEMBER_ID = urlParams.get('member') || null;
+  const FORCE_MEMBER_KEY = "planner.forceMember";
+  const memberFromUrl = ((urlParams.get("member") || urlParams.get("id") || "").trim().toLowerCase()) || "";
+  const memberFromHandoff = (() => {
+    try { return String(localStorage.getItem(FORCE_MEMBER_KEY) || "").trim().toLowerCase(); }
+    catch { return ""; }
+  })();
+  const MEMBER_ID = (memberFromUrl || memberFromHandoff || "") || null;
+  const WORKSPACE_ID = MEMBER_ID || "jsw";
+  try {
+    if(memberFromUrl || memberFromHandoff) localStorage.removeItem(FORCE_MEMBER_KEY);
+  } catch(_){}
   const KEY = MEMBER_ID ? "daily_planner.v1." + MEMBER_ID : "daily_planner.v1";
+  const DEFAULT_MEMBER_NAME = "JSW";
+  const MEMBER_INIT_KEY = "daily_planner.member_init.v1";
   const KEY_TEAM = "vmb_team";
   function loadTeamFromStorage(){
     try { return JSON.parse(localStorage.getItem(KEY_TEAM) || "[]"); }
@@ -1576,41 +1666,441 @@
     catch { return {}; }
   }
   function saveAll(db){ localStorage.setItem(KEY, JSON.stringify(db)); }
+  function normalizeMemberId(id){
+    return String(id || "").trim().toLowerCase();
+  }
+  function uniqueMemberIds(ids){
+    return [...new Set((Array.isArray(ids) ? ids : []).map(normalizeMemberId).filter(Boolean))];
+  }
+  function workspaceKeyForMember(memberId){
+    const id = normalizeMemberId(memberId);
+    return !id || id === "jsw" ? "daily_planner.v1" : ("daily_planner.v1." + id);
+  }
+  function archiveKeyForMember(memberId){
+    const id = normalizeMemberId(memberId);
+    return !id || id === "jsw" ? "daily_planner.archive.v1" : ("daily_planner.archive.v1." + id);
+  }
+  function loadWorkspaceDb(memberId){
+    try { return JSON.parse(localStorage.getItem(workspaceKeyForMember(memberId)) || "{}"); }
+    catch { return {}; }
+  }
+  function saveWorkspaceDb(memberId, db){
+    localStorage.setItem(workspaceKeyForMember(memberId), JSON.stringify(db));
+  }
+  function loadArchive(memberId){
+    try { return JSON.parse(localStorage.getItem(archiveKeyForMember(memberId)) || "[]"); }
+    catch { return []; }
+  }
+  function saveArchive(memberId, items){
+    localStorage.setItem(archiveKeyForMember(memberId), JSON.stringify(items));
+  }
+  function addArchiveRecord(record){
+    const memberId = normalizeMemberId(WORKSPACE_ID);
+    const list = loadArchive(memberId);
+    list.unshift({ ...record, archivedAt: Date.now(), workspaceId: memberId || "jsw" });
+    if(list.length > 2000) list.length = 2000;
+    saveArchive(memberId, list);
+  }
+  function migrateDoneTasksToArchive(db){
+    const touchedDays = new Set();
+    const archivedTaskKeys = new Set();
+    const dayKeys = Object.keys(db || {}).sort();
+    for(const dayKey of dayKeys){
+      const dayEntry = db[dayKey];
+      if(!dayEntry || !Array.isArray(dayEntry.projects)) continue;
+      for(const proj of dayEntry.projects){
+        if(!proj || !Array.isArray(proj.tasks)) continue;
+        for(let i = proj.tasks.length - 1; i >= 0; i--){
+          const task = proj.tasks[i];
+          if(!task || task.status !== "done") continue;
+          const taskKey = (proj.id || "noproj") + "::" + (task.id || (task.title || "notitle"));
+          if(!archivedTaskKeys.has(taskKey)){
+            addArchiveRecord({
+              type: "task",
+              reason: "done",
+              date: dayKey,
+              completedAt: task.completedAt || Date.now(),
+              projectId: proj.id || null,
+              projectTitle: proj.title || "",
+              taskId: task.id || null,
+              task: deepClone(task)
+            });
+            archivedTaskKeys.add(taskKey);
+          }
+          proj.tasks.splice(i, 1);
+          touchedDays.add(dayKey);
+        }
+      }
+    }
+    return touchedDays;
+  }
+  function normalizeTaskAndStepDates(db){
+    const touchedDays = new Set();
+    for(const dayKey of Object.keys(db || {})){
+      const dayEntry = db[dayKey];
+      if(!dayEntry || !Array.isArray(dayEntry.projects)) continue;
+      let dayTouched = false;
+      for(const proj of dayEntry.projects){
+        if(!proj || !Array.isArray(proj.tasks)) continue;
+        for(const task of proj.tasks){
+          if(!task) continue;
+          if(!task.byWhen){
+            task.byWhen = dayKey;
+            dayTouched = true;
+          }
+          if(!Array.isArray(task.steps)) continue;
+          for(const step of task.steps){
+            if(!step || typeof step !== "object") continue;
+            if(!step.byWhen){
+              step.byWhen = dayKey;
+              dayTouched = true;
+            }
+          }
+        }
+      }
+      if(dayTouched) touchedDays.add(dayKey);
+    }
+    return touchedDays;
+  }
+  function enforceArchiveRemovals(db){
+    const items = loadArchive(normalizeMemberId(WORKSPACE_ID));
+    if(!Array.isArray(items) || items.length === 0) return;
+    for(const rec of items){
+      if(rec.type === "project"){
+        const pid = rec.projectId || rec.project?.id || null;
+        if(!pid) continue;
+        for(const dayKey of Object.keys(db)){
+          const e = db[dayKey];
+          if(!e || !Array.isArray(e.projects)) continue;
+          e.projects = e.projects.filter(p => p && p.id !== pid);
+        }
+      } else if(rec.type === "task"){
+        const pid = rec.projectId || null;
+        const tid = rec.taskId || rec.task?.id || null;
+        const ttitle = (rec.task?.title || "").trim().toLowerCase();
+        for(const dayKey of Object.keys(db)){
+          const e = db[dayKey];
+          if(!e || !Array.isArray(e.projects)) continue;
+          for(const p of e.projects){
+            if(!p || !Array.isArray(p.tasks)) continue;
+            if(pid && p.id !== pid) continue;
+            p.tasks = p.tasks.filter(t => {
+              if(!t) return false;
+              if(tid && t.id === tid) return false;
+              if(!tid && ttitle && (t.title || "").trim().toLowerCase() === ttitle) return false;
+              return true;
+            });
+          }
+        }
+      }
+    }
+  }
+  function deepClone(value){
+    try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
+  }
+  function projectKey(project){
+    const owner = normalizeMemberId(project && project.ownerWorkspaceId ? project.ownerWorkspaceId : WORKSPACE_ID);
+    const title = String(project && project.title ? project.title : "").trim().toLowerCase();
+    return owner + "::" + (title || ("id:" + String(project && project.id ? project.id : "")));
+  }
+  function normalizeProjectMeta(project){
+    if(!project || typeof project !== "object") return;
+    if(!project.id) project.id = uid("proj");
+    project.teamMemberIds = uniqueMemberIds(project.teamMemberIds);
+    project._sharedWithIds = uniqueMemberIds(project._sharedWithIds);
+    if(project.ownerWorkspaceId) project.ownerWorkspaceId = normalizeMemberId(project.ownerWorkspaceId);
+    else project.ownerWorkspaceId = normalizeMemberId(WORKSPACE_ID);
+  }
+  function dedupeEntryProjects(entry){
+    if(!entry || !Array.isArray(entry.projects) || entry.projects.length < 2) return;
+    const map = new Map();
+    for(const p of entry.projects){
+      if(!p) continue;
+      normalizeProjectMeta(p);
+      const key = projectKey(p);
+      if(!map.has(key)){
+        map.set(key, p);
+        continue;
+      }
+      const keep = map.get(key);
+      const keepTasks = Array.isArray(keep.tasks) ? keep.tasks.length : 0;
+      const curTasks = Array.isArray(p.tasks) ? p.tasks.length : 0;
+      const winner = curTasks > keepTasks ? p : keep;
+      const loser = winner === p ? keep : p;
+      // Merge assignment metadata so we don't lose recipients.
+      const mergedTeam = uniqueMemberIds([...(Array.isArray(winner.teamMemberIds) ? winner.teamMemberIds : []), ...(Array.isArray(loser.teamMemberIds) ? loser.teamMemberIds : [])]);
+      winner.teamMemberIds = mergedTeam;
+      const mergedShared = uniqueMemberIds([...(Array.isArray(winner._sharedWithIds) ? winner._sharedWithIds : []), ...(Array.isArray(loser._sharedWithIds) ? loser._sharedWithIds : [])]);
+      winner._sharedWithIds = mergedShared;
+      map.set(key, winner);
+    }
+    entry.projects = Array.from(map.values());
+  }
+  function repairWorkspaceDb(db){
+    let touched = false;
+    for(const dayKey of Object.keys(db || {})){
+      const entry = db[dayKey];
+      if(!entry || !Array.isArray(entry.projects)) continue;
+      const before = JSON.stringify(entry.projects);
+      for(const p of entry.projects) normalizeProjectMeta(p);
+      dedupeEntryProjects(entry);
+      if(JSON.stringify(entry.projects) !== before) touched = true;
+    }
+    return touched;
+  }
+  function repairAllWorkspaceCorruption(){
+    const keys = [];
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && (k === "daily_planner.v1" || k.startsWith("daily_planner.v1."))) keys.push(k);
+    }
+    for(const k of keys){
+      try {
+        const db = JSON.parse(localStorage.getItem(k) || "{}");
+        if(!db || typeof db !== "object") continue;
+        const touched = repairWorkspaceDb(db);
+        if(touched) localStorage.setItem(k, JSON.stringify(db));
+      } catch(e){ console.warn("[repair] skipped workspace", k, e); }
+    }
+  }
+  function upsertProjectInMemberWorkspace(memberId, day, project){
+    const db = loadWorkspaceDb(memberId);
+    const memberEntry = ensureDay(db, day);
+    memberEntry.projects = memberEntry.projects || [];
+    const idx = memberEntry.projects.findIndex(x => x && x.id === project.id);
+    if(idx >= 0) memberEntry.projects[idx] = deepClone(project);
+    else memberEntry.projects.push(deepClone(project));
+    saveWorkspaceDb(memberId, db);
+  }
+  function removeProjectFromMemberWorkspace(memberId, day, projectId){
+    const db = loadWorkspaceDb(memberId);
+    const memberEntry = db[day];
+    if(!memberEntry || !Array.isArray(memberEntry.projects)) return;
+    const idx = memberEntry.projects.findIndex(x => x && x.id === projectId);
+    if(idx >= 0){
+      memberEntry.projects.splice(idx, 1);
+      saveWorkspaceDb(memberId, db);
+    }
+  }
+  function syncSingleProjectAcrossSharedWorkspaces(projectId, ownerId){
+    const normalizedOwner = normalizeMemberId(ownerId);
+    if(!projectId || !normalizedOwner) return;
+    const ownerDb = loadWorkspaceDb(normalizedOwner);
+    let ownerTouched = false;
+    for(const dayKey of Object.keys(ownerDb)){
+      const dayEntry = ownerDb[dayKey];
+      if(!dayEntry || !Array.isArray(dayEntry.projects)) continue;
+      const project = dayEntry.projects.find(x => x && x.id === projectId);
+      if(!project) continue;
+      if(!project.ownerWorkspaceId) project.ownerWorkspaceId = normalizedOwner;
+      if(normalizeMemberId(project.ownerWorkspaceId) !== normalizedOwner) continue;
+
+      const recipients = uniqueMemberIds((Array.isArray(project.teamMemberIds) ? project.teamMemberIds : [])
+        .map(normalizeMemberId)
+        .filter(id => id && id !== "admin" && id !== normalizedOwner));
+      const prevRecipients = Array.isArray(project._sharedWithIds) ? project._sharedWithIds.map(normalizeMemberId).filter(Boolean) : [];
+      const removedRecipients = prevRecipients.filter(id => !recipients.includes(id));
+
+      const copy = deepClone(project);
+      copy._sharedFrom = normalizedOwner;
+      copy.ownerWorkspaceId = normalizedOwner;
+      for(const recipientId of recipients){
+        upsertProjectInMemberWorkspace(recipientId, dayKey, copy);
+      }
+      for(const removedId of removedRecipients){
+        removeProjectFromMemberWorkspace(removedId, dayKey, project.id);
+      }
+      project._sharedWithIds = recipients;
+      ownerTouched = true;
+    }
+    if(ownerTouched) saveWorkspaceDb(normalizedOwner, ownerDb);
+  }
+  function syncProjectSharing(entry){
+    const ownerId = normalizeMemberId(WORKSPACE_ID);
+    if(!ownerId || !entry || !Array.isArray(entry.projects)) return;
+    for(const p of entry.projects){
+      if(!p || !p.id) continue;
+      if(!p.ownerWorkspaceId) p.ownerWorkspaceId = ownerId;
+      const projectOwner = normalizeMemberId(p.ownerWorkspaceId);
+      if(projectOwner !== ownerId) continue;
+      syncSingleProjectAcrossSharedWorkspaces(p.id, ownerId);
+    }
+  }
+  function removeProjectSharingBySnapshot(project, day){
+    if(!project || !project.id) return;
+    const ownerId = normalizeMemberId(project.ownerWorkspaceId || WORKSPACE_ID);
+    if(ownerId !== normalizeMemberId(WORKSPACE_ID)) return;
+    const recipients = Array.isArray(project._sharedWithIds) ? project._sharedWithIds.map(normalizeMemberId).filter(Boolean) : [];
+    for(const memberId of recipients){
+      removeProjectFromMemberWorkspace(memberId, day, project.id);
+    }
+  }
+  function workspaceMeta(memberId){
+    return { __workspaceMeta: { memberId, initializedAt: Date.now() } };
+  }
+  function loadMemberInitMap(){
+    try { return JSON.parse(localStorage.getItem(MEMBER_INIT_KEY) || "{}"); }
+    catch { return {}; }
+  }
+  function saveMemberInitMap(map){
+    try { localStorage.setItem(MEMBER_INIT_KEY, JSON.stringify(map)); } catch(e){ console.warn(e); }
+  }
+  function ensureBlankWorkspaceForNewMember(){
+    if(!MEMBER_ID) return;
+    // Hard ownership guard: if this key has data not explicitly owned by MEMBER_ID,
+    // reset it to a blank member-owned workspace.
+    try {
+      const raw = localStorage.getItem(KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const owner = parsed && parsed.__workspaceMeta && parsed.__workspaceMeta.memberId
+        ? String(parsed.__workspaceMeta.memberId).trim().toLowerCase()
+        : null;
+      if(owner !== MEMBER_ID){
+        localStorage.setItem(KEY, JSON.stringify(workspaceMeta(MEMBER_ID)));
+      }
+    } catch(e){
+      localStorage.setItem(KEY, JSON.stringify(workspaceMeta(MEMBER_ID)));
+    }
+
+    const map = loadMemberInitMap();
+    if(map[MEMBER_ID]) return;
+    // First visit for this member id: start from a truly blank workspace.
+    localStorage.setItem(KEY, JSON.stringify(workspaceMeta(MEMBER_ID)));
+    map[MEMBER_ID] = Date.now();
+    saveMemberInitMap(map);
+  }
   function prevDay(day){
     const d = new Date(day + "T00:00:00");
     d.setDate(d.getDate() - 1);
     return iso(d);
   }
+  function latestPriorEntry(db, day){
+    const keys = Object.keys(db || {}).filter(k => k < day).sort();
+    if(keys.length === 0) return null;
+    return db[keys[keys.length - 1]] || null;
+  }
   function seedFromPreviousDay(db, day){
-    const prev = prevDay(day);
-    const prevEntry = db[prev];
-    if(!prevEntry || !prevEntry.projects || prevEntry.projects.length === 0) return;
     const entry = db[day];
     if(!entry) return;
-    for(const p of prevEntry.projects){
-      const openTasks = (p.tasks || []).filter(t => t.status !== "done");
-      if(openTasks.length === 0 && !(p.title || "").trim()) continue;
-      entry.projects.push({
-        id: uid("proj"),
+    dedupeEntryProjects(entry);
+    const existingIds = new Set(entry.projects.map(p => p && p.id).filter(Boolean));
+    const existingKeys = new Set(entry.projects.map(projectKey));
+    const priorDayKeys = Object.keys(db || {}).filter(k => k < day).sort();
+    if(priorDayKeys.length === 0) return;
+
+    // Collect carry-forward source per project from prior days.
+    // Prefer the latest snapshot with open tasks; avoid empty snapshots wiping active work.
+    const carrySource = new Map(); // key -> { project, sourceDay, openCount }
+    for(const dayKey of priorDayKeys){
+      const dayEntry = db[dayKey];
+      if(!dayEntry || !Array.isArray(dayEntry.projects)) continue;
+      for(const p of dayEntry.projects){
+        if(!p) continue;
+        const srcTasks = (Array.isArray(p.tasks) ? p.tasks : []).filter(t => (t && t.status) !== "done");
+        const openCount = srcTasks.length;
+        const hasTitle = !!(p.title || "").trim();
+        if(openCount === 0 && !hasTitle) continue;
+        const key = projectKey(p);
+        const prev = carrySource.get(key);
+        if(!prev){
+          carrySource.set(key, { project: p, sourceDay: dayKey, openCount });
+          continue;
+        }
+        if(openCount > 0){
+          carrySource.set(key, { project: p, sourceDay: dayKey, openCount });
+          continue;
+        }
+        if(prev.openCount === 0){
+          carrySource.set(key, { project: p, sourceDay: dayKey, openCount });
+        }
+      }
+    }
+
+    for(const { project: p, sourceDay } of carrySource.values()){
+      if(!p) continue;
+      const srcTasks = (Array.isArray(p.tasks) ? p.tasks : []).filter(t => (t && t.status) !== "done");
+      if(srcTasks.length === 0 && !(p.title || "").trim()) continue;
+      const existingIdx = entry.projects.findIndex(ep => {
+        if(!ep) return false;
+        if(p.id && ep.id === p.id) return true;
+        return projectKey(ep) === projectKey(p);
+      });
+      if(existingIdx >= 0){
+        const existingProj = entry.projects[existingIdx];
+        const existingOpenCount = (Array.isArray(existingProj.tasks) ? existingProj.tasks : [])
+          .filter(t => (t && t.status) !== "done").length;
+        if(existingOpenCount === 0 && srcTasks.length > 0){
+          existingProj.tasks = srcTasks.map(t => ({
+            id: t.id || uid("task"),
+            title: t.title || "",
+            status: t.status || "todo",
+            steps: stepObjs(t).map(o => ({ text: o.text, notes: o.notes, byWhen: o.byWhen })),
+            notes: t.notes || "",
+            byWhen: t.byWhen || null,
+            createdAt: t.createdAt || Date.now(),
+            completedAt: t.completedAt || null,
+            carriedFrom: t.carriedFrom || sourceDay || null
+          }));
+          if(!existingProj.ownerWorkspaceId && p.ownerWorkspaceId){
+            existingProj.ownerWorkspaceId = p.ownerWorkspaceId;
+          }
+          if((!Array.isArray(existingProj.teamMemberIds) || existingProj.teamMemberIds.length === 0) && Array.isArray(p.teamMemberIds)){
+            existingProj.teamMemberIds = [...p.teamMemberIds];
+          }
+        }
+        continue;
+      }
+      const cloned = {
+        id: p.id || uid("proj"),
         title: p.title || "",
         teamMemberIds: Array.isArray(p.teamMemberIds) ? [...p.teamMemberIds] : [],
-        tasks: openTasks.map(t => ({
-          id: uid("task"),
+        ownerWorkspaceId: p.ownerWorkspaceId || normalizeMemberId(WORKSPACE_ID),
+        _sharedWithIds: Array.isArray(p._sharedWithIds) ? [...p._sharedWithIds] : [],
+        tasks: srcTasks.map(t => ({
+          id: t.id || uid("task"),
           title: t.title || "",
           status: t.status || "todo",
           steps: stepObjs(t).map(o => ({ text: o.text, notes: o.notes, byWhen: o.byWhen })),
           notes: t.notes || "",
           byWhen: t.byWhen || null,
-          createdAt: Date.now(),
-          completedAt: null,
-          carriedFrom: prev
+          createdAt: t.createdAt || Date.now(),
+          completedAt: t.completedAt || null,
+          carriedFrom: t.carriedFrom || sourceDay || null
         })),
-        collapsed: true
-      });
+        collapsed: typeof p.collapsed === "boolean" ? p.collapsed : true
+      };
+      entry.projects.push(cloned);
+      if(cloned.id) existingIds.add(cloned.id);
+      existingKeys.add(projectKey(cloned));
+    }
+    dedupeEntryProjects(entry);
+  }
+  function repairCarryCorruption(db){
+    const keys = Object.keys(db || {}).sort();
+    for(const dayKey of keys){
+      const entry = ensureDay(db, dayKey);
+      dedupeEntryProjects(entry);
     }
   }
   function isFutureDay(day){
     return day > iso(new Date());
+  }
+  function taskStartDay(task){
+    if(task && task.createdAt){
+      const d = new Date(task.createdAt);
+      if(!isNaN(d.getTime())) return iso(d);
+    }
+    return currentDay;
+  }
+  function taskVisibleOnDay(task, day){
+    if(!task || task.status === "done") return false;
+    const start = taskStartDay(task);
+    if(day < start) return false;
+    const due = (task.byWhen || "").trim();
+    if(!due) return true;
+    if(day <= due) return true;
+    // Overdue tasks carry forward through "today".
+    return day <= iso(new Date());
   }
   function getFutureDayView(db, day){
     const byTitle = new Map();
@@ -1619,9 +2109,9 @@
       if(!entry || !entry.projects) continue;
       for(let pi = 0; pi < entry.projects.length; pi++){
         const p = entry.projects[pi];
-        const dueTasks = (p.tasks || []).filter((t, ti) => (t.byWhen || "").trim() === day && t.status !== "done");
+        const dueTasks = (p.tasks || []).filter((t) => taskVisibleOnDay(t, day));
         if(dueTasks.length === 0) continue;
-        const titleKey = (p.title || "").trim().toLowerCase() || "__untitled";
+        const titleKey = p.id || ((p.title || "").trim().toLowerCase() || "__untitled");
         if(!byTitle.has(titleKey)){
           byTitle.set(titleKey, {
             id: p.id,
@@ -1633,10 +2123,10 @@
           });
         }
         const vp = byTitle.get(titleKey);
-        const taskTitleKey = (t) => ((t.title || "").trim() + "\0" + (t.byWhen || "").trim()).toLowerCase();
+        const taskTitleKey = (t) => ((t.id || "") + "\0" + ((t.title || "").trim()) + "\0" + ((t.byWhen || "").trim())).toLowerCase();
         for(let ti = 0; ti < (p.tasks || []).length; ti++){
           const t = p.tasks[ti];
-          if((t.byWhen || "").trim() !== day || t.status === "done") continue;
+          if(!taskVisibleOnDay(t, day)) continue;
           const key = taskTitleKey(t);
           if(vp._seen && vp._seen.has(key)) continue;
           if(!vp._seen) vp._seen = new Set();
@@ -1653,8 +2143,10 @@
   function ensureDay(db, day){
     if(!db[day]){
       db[day] = { date: day, dailyIntent:"", dailyLog:"", projects:[], focus:{active:false, startedAt:null, taskRef:null} };
-      if(!isFutureDay(day)) seedFromPreviousDay(db, day);
     }
+    // Always merge prior-day projects for all dates (including future).
+    seedFromPreviousDay(db, day);
+    dedupeEntryProjects(db[day]);
     return db[day];
   }
   function uid(prefix="id"){ return prefix + "_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16); }
@@ -1662,6 +2154,12 @@
   let currentDay = iso(new Date());
   let focusTimer = null;
   let focusStartTs = null;
+  const openTaskDetailsState = new Set();
+  function taskDetailsKey(task){
+    const day = task && task._source ? task._source.day : currentDay;
+    const id = task && task.id ? task.id : "";
+    return day + "::" + id;
+  }
 
   function stepObjs(t){
     const s = t.steps;
@@ -1685,36 +2183,167 @@
     const db = loadAll();
     db[entry.date] = entry;
     saveAll(db);
+    syncProjectSharing(entry);
+  }
+  function applyTaskCoreFields(target, source){
+    target.title = source.title || "";
+    target.steps = Array.isArray(source.steps)
+      ? source.steps.map(s => typeof s === "object" && s ? { text: s.text || "", notes: s.notes || "", byWhen: s.byWhen || null } : { text: String(s || ""), notes: "", byWhen: null })
+      : stepObjs(source);
+    target.notes = source.notes || "";
+    target.byWhen = source.byWhen || null;
+    target.status = source.status || "todo";
+    target.completedAt = source.completedAt || null;
+  }
+  function syncTaskAcrossDates(db, projectId, taskId, sourceDay){
+    if(!db || !projectId || !taskId || !sourceDay) return;
+    const sourceEntry = db[sourceDay];
+    const sourceProj = sourceEntry?.projects?.find(p => p && p.id === projectId);
+    if(!sourceProj || !Array.isArray(sourceProj.tasks)) return;
+    const srcTask = sourceProj.tasks.find(t => t && t.id === taskId);
+    if(!srcTask) return;
+    const done = srcTask.status === "done";
+
+    for(const dayKey of Object.keys(db)){
+      const dayEntry = db[dayKey];
+      if(!dayEntry || !Array.isArray(dayEntry.projects)) continue;
+      const proj = dayEntry.projects.find(p => p && p.id === projectId);
+      if(!proj || !Array.isArray(proj.tasks)) continue;
+      const idx = proj.tasks.findIndex(t => t && t.id === taskId);
+      if(idx < 0) continue;
+
+      if(done && dayKey !== sourceDay){
+        proj.tasks.splice(idx, 1);
+        continue;
+      }
+      if(dayKey === sourceDay){
+        applyTaskCoreFields(proj.tasks[idx], srcTask);
+      } else if(!done){
+        applyTaskCoreFields(proj.tasks[idx], srcTask);
+      }
+    }
+  }
+  function removeTaskAcrossDates(db, projectId, taskId){
+    if(!db || !projectId || !taskId) return;
+    for(const dayKey of Object.keys(db)){
+      const dayEntry = db[dayKey];
+      if(!dayEntry || !Array.isArray(dayEntry.projects)) continue;
+      const proj = dayEntry.projects.find(p => p && p.id === projectId);
+      if(!proj || !Array.isArray(proj.tasks)) continue;
+      const idx = proj.tasks.findIndex(t => t && t.id === taskId);
+      if(idx >= 0) proj.tasks.splice(idx, 1);
+    }
+  }
+  function archiveTaskByLocation(dayKey, projIdx, taskIdx, reason){
+    const db = loadAll();
+    const dayEntry = ensureDay(db, dayKey);
+    const proj = dayEntry.projects[projIdx];
+    if(!proj || !Array.isArray(proj.tasks) || taskIdx >= proj.tasks.length) return false;
+    const task = proj.tasks[taskIdx];
+    addArchiveRecord({
+      type: "task",
+      reason: reason || "done",
+      date: dayKey,
+      completedAt: Date.now(),
+      projectId: proj.id || null,
+      projectTitle: proj.title || "",
+      taskId: task.id || null,
+      task: deepClone(task)
+    });
+    removeTaskAcrossDates(db, proj.id, task.id);
+    saveAll(db);
+    const sourceEntry = db[dayKey];
+    if(sourceEntry) syncProjectSharing(sourceEntry);
+    return true;
   }
   function persistTaskChange(t, entry, skipRender){
+    const db = loadAll();
+    let sourceDay = entry?.date || currentDay;
+    let projectId = null;
     if(t._source){
-      const db = loadAll();
-      const dayEntry = ensureDay(db, t._source.day);
+      sourceDay = t._source.day;
+      const dayEntry = ensureDay(db, sourceDay);
       const proj = dayEntry.projects[t._source.pi];
       if(proj && proj.tasks && t._source.ti < proj.tasks.length){
         const real = proj.tasks[t._source.ti];
-        real.title = t.title;
-        real.steps = Array.isArray(t.steps) ? t.steps.map(s => typeof s === "object" && s ? { text: s.text || "", notes: s.notes || "", byWhen: s.byWhen || null } : { text: String(s || ""), notes: "", byWhen: null }) : stepObjs(t);
-        real.notes = t.notes;
-        real.byWhen = t.byWhen;
-        real.status = t.status;
-        real.completedAt = t.completedAt;
-        persistEntry(dayEntry);
+        applyTaskCoreFields(real, t);
+        projectId = proj.id || null;
       }
     } else {
-      persistEntry(entry);
+      const dayEntry = ensureDay(db, sourceDay);
+      const proj = (dayEntry.projects || []).find(p => Array.isArray(p.tasks) && p.tasks.some(x => x && x.id === t.id));
+      if(proj){
+        const idx = proj.tasks.findIndex(x => x && x.id === t.id);
+        if(idx >= 0){
+          applyTaskCoreFields(proj.tasks[idx], t);
+          projectId = proj.id || null;
+        }
+      }
+    }
+    if(projectId){
+      syncTaskAcrossDates(db, projectId, t.id, sourceDay);
+      saveAll(db);
+      const sourceEntry = db[sourceDay];
+      if(sourceEntry) syncProjectSharing(sourceEntry);
+    } else {
+      saveAll(db);
     }
     if(!skipRender) render(loadAll());
   }
 
   function setDay(day){
     const db = loadAll();
-    ensureDay(db, day);
+    normalizeProjectIds(db);
+    const dateTouchedDays = normalizeTaskAndStepDates(db);
+    if(dateTouchedDays.size){
+      for(const d of dateTouchedDays){
+        if(db[d]) syncProjectSharing(db[d]);
+      }
+    }
+    const touchedDays = migrateDoneTasksToArchive(db);
+    if(touchedDays.size){
+      for(const d of touchedDays){
+        if(db[d]) syncProjectSharing(db[d]);
+      }
+    }
+    enforceArchiveRemovals(db);
+    const entry = ensureDay(db, day);
+    dedupeEntryProjects(entry);
+    syncProjectSharing(entry);
     currentDay = day;
     if(navDate) navDate.value = day;
     if(navTodayStamp) navTodayStamp.textContent = day;
     saveAll(db);
     render(db);
+  }
+  function projectPageHref(projectId){
+    const params = new URLSearchParams();
+    if(projectId) params.set("project", projectId);
+    params.set("day", currentDay);
+    if(MEMBER_ID) params.set("member", MEMBER_ID);
+    return "/project?" + params.toString();
+  }
+  function normalizeProjectIds(db){
+    let changed = false;
+    for(const dayKey of Object.keys(db || {})){
+      const entry = db[dayKey];
+      if(!entry || !Array.isArray(entry.projects)) continue;
+      for(const p of entry.projects){
+        if(!p) continue;
+        if(!p.id){
+          p.id = uid("proj");
+          changed = true;
+        }
+      }
+    }
+    if(changed) saveAll(db);
+    return changed;
+  }
+  function refreshArchiveLink(){
+    const archiveLink = $("memArchiveLink");
+    if(!archiveLink) return;
+    const m = normalizeMemberId(WORKSPACE_ID);
+    archiveLink.href = "mem-archive.html" + (m && m !== "jsw" ? ("?member=" + encodeURIComponent(m)) : "");
   }
 
   // Dropdown open/close
@@ -1820,8 +2449,8 @@
         addBtn.addEventListener("click", () => {
           const db = loadAll();
           const e = ensureDay(db, currentDay);
-          e.projects.push({ id: uid("proj"), title: "", teamMemberIds: [], tasks: [], collapsed: false });
-          saveAll(db);
+          e.projects.push({ id: uid("proj"), title: "", teamMemberIds: [], ownerWorkspaceId: normalizeMemberId(WORKSPACE_ID), _sharedWithIds: [], tasks: [], collapsed: false });
+          persistEntry(e);
           render(loadAll());
         });
         emptyWrap.appendChild(addBtn);
@@ -1832,6 +2461,7 @@
 
     for(const [pi, p] of list.entries()){
       if(!Array.isArray(p.teamMemberIds)) p.teamMemberIds = [];
+      p.teamMemberIds = uniqueMemberIds(p.teamMemberIds);
       if(!p.teamMemberId) p.teamMemberId = "";
       if(typeof p.collapsed !== "boolean") p.collapsed = false;
       const matches =
@@ -1953,10 +2583,19 @@
       statusIndicators.appendChild(taskCountSpan);
       const hasAnyByWhen = taskList.some(t => (t.byWhen || "").trim() !== "");
       if(hasAnyByWhen){
-        const dueTodayCount = taskList.filter(t => (t.byWhen || "").trim() === currentDay).length;
+        const dueTodayCount = taskList.filter(t => (t.byWhen || "").trim() === currentDay && t.status !== "done").length;
+        const overdueCount = taskList.filter(t => {
+          const d = (t.byWhen || "").trim();
+          return d && d < currentDay && t.status !== "done";
+        }).length;
         const dueTodaySpan = document.createElement("span");
-        dueTodaySpan.className = "dueTodayPill " + (dueTodayCount === 0 ? "dueTodayZero" : "dueTodayOne");
-        dueTodaySpan.textContent = dueTodayCount === 0 ? "0 due today" : dueTodayCount + " due today";
+        if(overdueCount > 0){
+          dueTodaySpan.className = "dueTodayPill dueTodayOverdue";
+          dueTodaySpan.textContent = dueTodayCount > 0 ? (dueTodayCount + " due today • " + overdueCount + " overdue") : (overdueCount + " overdue");
+        } else {
+          dueTodaySpan.className = "dueTodayPill " + (dueTodayCount === 0 ? "dueTodayZero" : "dueTodayOne");
+          dueTodaySpan.textContent = dueTodayCount === 0 ? "0 due today" : dueTodayCount + " due today";
+        }
         statusIndicators.appendChild(dueTodaySpan);
       }
       chips.appendChild(statusIndicators);
@@ -1978,7 +2617,7 @@
       addTaskBtn.setAttribute("aria-label", "Add task");
       addTaskBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const newTask = { id: uid("task"), title: "", status: "todo", steps: [], notes: "", byWhen: isFutureView ? currentDay : null, createdAt: Date.now(), completedAt: null, carriedFrom: null };
+        const newTask = { id: uid("task"), title: "", status: "todo", steps: [], notes: "", byWhen: iso(new Date()), createdAt: Date.now(), completedAt: null, carriedFrom: null };
         if(isFutureView){
           const db = loadAll();
           for(const dayKey of Object.keys(db)){
@@ -2009,18 +2648,41 @@
         }, 80);
       });
 
+      const openProjectBtn = document.createElement("a");
+      openProjectBtn.className = "btn secondary iconBtn";
+      openProjectBtn.textContent = "↗";
+      openProjectBtn.title = "Open project page";
+      openProjectBtn.href = projectPageHref(p.id);
+
       const archiveProject = () => {
         const projectId = p.id;
         showAdminApproveModal("Archive", () => {
           const db = loadAll();
+          let archivedSnapshot = null;
+          let archivedDay = null;
           for(const dayKey of Object.keys(db)){
             const dayEntry = db[dayKey];
             if(!dayEntry || !dayEntry.projects) continue;
             const idx = dayEntry.projects.findIndex(x => x.id === projectId);
             if(idx >= 0){
+              if(!archivedSnapshot){
+                archivedSnapshot = deepClone(dayEntry.projects[idx]);
+                archivedDay = dayKey;
+              }
+              removeProjectSharingBySnapshot(dayEntry.projects[idx], dayKey);
               dayEntry.projects.splice(idx, 1);
               persistEntry(dayEntry);
             }
+          }
+          if(archivedSnapshot){
+            addArchiveRecord({
+              type: "project",
+              reason: "owner_archive",
+              date: archivedDay || currentDay,
+              projectId: archivedSnapshot.id || null,
+              projectTitle: archivedSnapshot.title || "",
+              project: archivedSnapshot
+            });
           }
           render(loadAll());
           closeAdminApproveModal();
@@ -2035,6 +2697,7 @@
             if(!dayEntry || !dayEntry.projects) continue;
             const idx = dayEntry.projects.findIndex(x => x.id === projectId);
             if(idx >= 0){
+              removeProjectSharingBySnapshot(dayEntry.projects[idx], dayKey);
               dayEntry.projects.splice(idx, 1);
               persistEntry(dayEntry);
             }
@@ -2106,11 +2769,13 @@
       projectMoreWrap.appendChild(projectMoreBtn);
       projectMoreWrap.appendChild(projectMoreMenu);
 
+      rightBtns.appendChild(openProjectBtn);
       rightBtns.appendChild(addTaskBtn);
       rightBtns.appendChild(ownerChip);
+      // Move project reorder controls to the right-side action cluster.
+      rightBtns.appendChild(reorderWrap);
       rightBtns.appendChild(projectMoreWrap);
 
-      top.appendChild(reorderWrap);
       top.appendChild(collapseBtn);
       top.appendChild(titleWrap);
       top.appendChild(rightBtns);
@@ -2135,7 +2800,7 @@
         addTaskInArea.className = "btn good";
         addTaskInArea.textContent = "+ Task";
         addTaskInArea.addEventListener("click", () => {
-          const newTask = { id: uid("task"), title: "", status: "todo", steps: [], notes: "", byWhen: isFutureView ? currentDay : null, createdAt: Date.now(), completedAt: null, carriedFrom: null };
+          const newTask = { id: uid("task"), title: "", status: "todo", steps: [], notes: "", byWhen: iso(new Date()), createdAt: Date.now(), completedAt: null, carriedFrom: null };
           if(isFutureView){
             const db = loadAll();
             for(const dayKey of Object.keys(db)){
@@ -2175,31 +2840,92 @@
         row.setAttribute("data-task-id", t.id);
         row.className = "taskRow" + (t.status === "done" ? " done" : t.status === "blocked" ? " blocked" : "");
         row.style.display = "grid";
-        row.style.gridTemplateColumns = "auto 1fr auto";
+        row.style.gridTemplateColumns = "auto auto 1fr auto";
         row.style.gridTemplateRows = "auto auto";
         row.style.gap = "0 10px";
-        row.style.width = "100%";
+        // Prevent right-edge bleed: account for row left offset.
+        row.style.width = "calc(100% - 20px)";
+        row.style.boxSizing = "border-box";
         row.style.alignItems = "start";
+
+        const taskMoveWrap = document.createElement("div");
+        taskMoveWrap.style.display = "flex";
+        taskMoveWrap.style.flexDirection = "column";
+        taskMoveWrap.style.gap = "2px";
+        taskMoveWrap.style.alignItems = "center";
+        taskMoveWrap.style.justifyContent = "center";
+        taskMoveWrap.style.gridColumn = "1";
+        taskMoveWrap.style.gridRow = "1";
+        const taskUpBtn = document.createElement("button");
+        taskUpBtn.type = "button";
+        taskUpBtn.className = "btn secondary iconBtn";
+        taskUpBtn.textContent = "↑";
+        taskUpBtn.title = "Move task up";
+        taskUpBtn.style.width = "24px";
+        taskUpBtn.style.height = "18px";
+        taskUpBtn.style.padding = "0";
+        const taskDownBtn = document.createElement("button");
+        taskDownBtn.type = "button";
+        taskDownBtn.className = "btn secondary iconBtn";
+        taskDownBtn.textContent = "↓";
+        taskDownBtn.title = "Move task down";
+        taskDownBtn.style.width = "24px";
+        taskDownBtn.style.height = "18px";
+        taskDownBtn.style.padding = "0";
+        const srcForMove = t._source;
+        const dayForMove = srcForMove ? srcForMove.day : currentDay;
+        const projIdxForMove = srcForMove ? srcForMove.pi : pi;
+        const taskIdxForMove = srcForMove ? srcForMove.ti : ti;
+        taskUpBtn.disabled = taskIdxForMove <= 0;
+        taskDownBtn.disabled = taskIdxForMove >= (taskList.length - 1);
+        taskUpBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if(taskIdxForMove <= 0) return;
+          const dbMove = loadAll();
+          const dayEntryMove = ensureDay(dbMove, dayForMove);
+          const projMove = dayEntryMove.projects[projIdxForMove];
+          if(!projMove || !Array.isArray(projMove.tasks) || taskIdxForMove <= 0) return;
+          [projMove.tasks[taskIdxForMove - 1], projMove.tasks[taskIdxForMove]] = [projMove.tasks[taskIdxForMove], projMove.tasks[taskIdxForMove - 1]];
+          persistEntry(dayEntryMove);
+          render(loadAll());
+        });
+        taskDownBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if(taskIdxForMove >= taskList.length - 1) return;
+          const dbMove = loadAll();
+          const dayEntryMove = ensureDay(dbMove, dayForMove);
+          const projMove = dayEntryMove.projects[projIdxForMove];
+          if(!projMove || !Array.isArray(projMove.tasks) || taskIdxForMove >= projMove.tasks.length - 1) return;
+          [projMove.tasks[taskIdxForMove], projMove.tasks[taskIdxForMove + 1]] = [projMove.tasks[taskIdxForMove + 1], projMove.tasks[taskIdxForMove]];
+          persistEntry(dayEntryMove);
+          render(loadAll());
+        });
+        taskMoveWrap.appendChild(taskUpBtn);
+        taskMoveWrap.appendChild(taskDownBtn);
 
         const cb = document.createElement("input");
         cb.type = "checkbox";
         cb.checked = (t.status === "done");
         cb.style.marginTop = "4px";
-        cb.style.gridColumn = "1";
+        cb.style.gridColumn = "2";
         cb.style.gridRow = "1";
         cb.addEventListener("change", () => {
           const src = t._source;
           const dayKey = src ? src.day : currentDay;
           const projIdx = src ? src.pi : pi;
           const taskIdx = src ? src.ti : ti;
-          const db = loadAll();
-          const dayEntry = ensureDay(db, dayKey);
-          const proj = dayEntry.projects[projIdx];
-          if(proj && proj.tasks && taskIdx < proj.tasks.length){
-            const task = proj.tasks[taskIdx];
-            task.status = cb.checked ? "done" : "todo";
-            task.completedAt = cb.checked ? Date.now() : null;
-            persistEntry(dayEntry);
+          if(cb.checked){
+            archiveTaskByLocation(dayKey, projIdx, taskIdx, "done");
+          } else {
+            const db = loadAll();
+            const dayEntry = ensureDay(db, dayKey);
+            const proj = dayEntry.projects[projIdx];
+            if(proj && proj.tasks && taskIdx < proj.tasks.length){
+              const task = proj.tasks[taskIdx];
+              task.status = "todo";
+              task.completedAt = null;
+              persistEntry(dayEntry);
+            }
           }
           render(loadAll());
         });
@@ -2211,7 +2937,7 @@
         titleCol.style.gap = "8px";
         titleCol.style.flexWrap = "wrap";
         titleCol.style.minWidth = "0";
-        titleCol.style.gridColumn = "2";
+        titleCol.style.gridColumn = "3";
         titleCol.style.gridRow = "1";
 
         const tTitle = document.createElement("input");
@@ -2227,6 +2953,7 @@
 
         const details = document.createElement("details");
         details.setAttribute("data-task-details", "");
+        if(openTaskDetailsState.has(taskDetailsKey(t))) details.open = true;
 
         const stepsArr = stepObjs(t);
         if(!Array.isArray(t.steps) || t.steps.length !== stepsArr.length || t.steps.some((x, i) => typeof x !== "object" || !x || !("text" in x))) t.steps = stepsArr.map(o => ({ text: o.text, notes: o.notes, byWhen: o.byWhen }));
@@ -2258,11 +2985,16 @@
           const stepIdx = si;
           const stepRow = document.createElement("div");
           stepRow.style.display = "grid";
-          stepRow.style.gridTemplateColumns = "35% 35% 1fr auto";
+          stepRow.style.gridTemplateColumns = "56px minmax(0,1fr) minmax(0,1fr) 118px 72px";
           stepRow.style.alignItems = "center";
           stepRow.style.gap = "8px";
           stepRow.style.width = "100%";
           stepRow.style.minWidth = "0";
+          stepRow.style.maxWidth = "100%";
+          stepRow.style.padding = "6px 8px";
+          stepRow.style.border = "1px solid var(--line)";
+          stepRow.style.borderRadius = "10px";
+          stepRow.style.background = "rgba(15,23,42,0.02)";
           const stepInput = document.createElement("input");
           stepInput.type = "text";
           stepInput.placeholder = "Step " + (si + 1);
@@ -2283,16 +3015,81 @@
           dateInput.style.minWidth = "0";
           dateInput.addEventListener("change", () => { step.byWhen = dateInput.value || null; persistTaskChange(t, entry); });
           dateInput.addEventListener("input", () => { step.byWhen = dateInput.value || null; persistTaskChange(t, entry, true); });
+          const stepMoveWrap = document.createElement("div");
+          stepMoveWrap.style.display = "flex";
+          stepMoveWrap.style.gap = "4px";
+          stepMoveWrap.style.alignItems = "center";
+          stepMoveWrap.style.width = "56px";
+          stepMoveWrap.style.justifySelf = "start";
+          stepMoveWrap.style.padding = "2px";
+          stepMoveWrap.style.border = "1px solid var(--line)";
+          stepMoveWrap.style.borderRadius = "8px";
+          stepMoveWrap.style.background = "rgba(15,23,42,0.03)";
+          const stepUpBtn = document.createElement("button");
+          stepUpBtn.type = "button";
+          stepUpBtn.className = "btn secondary iconBtn";
+          stepUpBtn.style.width = "26px";
+          stepUpBtn.style.height = "26px";
+          stepUpBtn.style.padding = "0";
+          stepUpBtn.textContent = "↑";
+          stepUpBtn.title = "Move step up";
+          stepUpBtn.disabled = stepIdx === 0;
+          stepUpBtn.addEventListener("click", () => {
+            if(stepIdx === 0) return;
+            [t.steps[stepIdx - 1], t.steps[stepIdx]] = [t.steps[stepIdx], t.steps[stepIdx - 1]];
+            persistTaskChange(t, entry);
+            openTaskDetailsState.add(taskDetailsKey(t));
+            render(loadAll());
+          });
+          const stepDownBtn = document.createElement("button");
+          stepDownBtn.type = "button";
+          stepDownBtn.className = "btn secondary iconBtn";
+          stepDownBtn.style.width = "26px";
+          stepDownBtn.style.height = "26px";
+          stepDownBtn.style.padding = "0";
+          stepDownBtn.textContent = "↓";
+          stepDownBtn.title = "Move step down";
+          stepDownBtn.disabled = stepIdx >= t.steps.length - 1;
+          stepDownBtn.addEventListener("click", () => {
+            if(stepIdx >= t.steps.length - 1) return;
+            [t.steps[stepIdx], t.steps[stepIdx + 1]] = [t.steps[stepIdx + 1], t.steps[stepIdx]];
+            persistTaskChange(t, entry);
+            openTaskDetailsState.add(taskDetailsKey(t));
+            render(loadAll());
+          });
+          stepMoveWrap.appendChild(stepUpBtn);
+          stepMoveWrap.appendChild(stepDownBtn);
           const delStepBtn = document.createElement("button");
           delStepBtn.type = "button";
           delStepBtn.className = "btn danger";
           delStepBtn.textContent = "Delete";
           delStepBtn.title = "Remove this step";
+          delStepBtn.style.height = "28px";
+          delStepBtn.style.padding = "0 10px";
+          delStepBtn.style.justifySelf = "end";
           delStepBtn.addEventListener("click", () => {
+            const src = t._source;
+            const dayKey = src ? src.day : currentDay;
+            const projectId = (src && src.day && db[src.day] && db[src.day].projects && db[src.day].projects[src.pi] && db[src.day].projects[src.pi].id) || p.id || null;
+            const projectTitle = (src && src.day && db[src.day] && db[src.day].projects && db[src.day].projects[src.pi] && db[src.day].projects[src.pi].title) || p.title || "";
+            const stepSnapshot = deepClone(step);
+            addArchiveRecord({
+              type: "step",
+              reason: "step_delete",
+              date: dayKey,
+              projectId: projectId,
+              projectTitle: projectTitle,
+              taskId: t.id || null,
+              taskTitle: t.title || "",
+              stepIndex: stepIdx,
+              step: stepSnapshot
+            });
             t.steps.splice(stepIdx, 1);
             persistTaskChange(t, entry);
+            openTaskDetailsState.add(taskDetailsKey(t));
             render(loadAll());
           });
+          stepRow.appendChild(stepMoveWrap);
           stepRow.appendChild(stepInput);
           stepRow.appendChild(notesInput);
           stepRow.appendChild(dateInput);
@@ -2306,8 +3103,9 @@
         addStepBtn.textContent = "+ step";
         addStepBtn.style.alignSelf = "flex-start";
         addStepBtn.addEventListener("click", () => {
-          t.steps.push({ text: "", notes: "", byWhen: null });
+          t.steps.push({ text: "", notes: "", byWhen: iso(new Date()) });
           persistTaskChange(t, entry);
+          openTaskDetailsState.add(taskDetailsKey(t));
           render(loadAll());
         });
 
@@ -2330,6 +3128,9 @@
         stepsContainer.style.paddingTop = "4px";
         stepsContainer.appendChild(inner);
         details.addEventListener("toggle", () => {
+          const key = taskDetailsKey(t);
+          if(details.open) openTaskDetailsState.add(key);
+          else openTaskDetailsState.delete(key);
           stepsContainer.style.display = details.open ? "block" : "none";
         });
         if(details.open) stepsContainer.style.display = "block";
@@ -2340,7 +3141,7 @@
         tools.style.alignItems = "center";
         tools.style.gap = "8px";
         tools.style.flexShrink = "0";
-        tools.style.gridColumn = "3";
+        tools.style.gridColumn = "4";
         tools.style.gridRow = "1";
 
         const tByWhenTask = document.createElement("input");
@@ -2362,9 +3163,18 @@
         `;
         status.value = t.status || "todo";
         status.addEventListener("change", () => {
-          t.status = status.value;
-          t.completedAt = (t.status === "done") ? Date.now() : null;
-          persistTaskChange(t, entry);
+          if(status.value === "done"){
+            const src = t._source;
+            const dayKey = src ? src.day : currentDay;
+            const projIdx = src ? src.pi : pi;
+            const taskIdx = src ? src.ti : ti;
+            archiveTaskByLocation(dayKey, projIdx, taskIdx, "done");
+          } else {
+            t.status = status.value;
+            t.completedAt = null;
+            persistTaskChange(t, entry);
+          }
+          render(loadAll());
         });
 
         tools.appendChild(tByWhenTask);
@@ -2398,13 +3208,7 @@
           const projIdx = src ? src.pi : pi;
           const taskIdx = src ? src.ti : ti;
           showAdminApproveModal("Archive", () => {
-            const db = loadAll();
-            const dayEntry = ensureDay(db, dayKey);
-            const proj = dayEntry.projects[projIdx];
-            if(proj && Array.isArray(proj.tasks) && taskIdx < proj.tasks.length){
-              proj.tasks.splice(taskIdx, 1);
-              persistEntry(dayEntry);
-            }
+            archiveTaskByLocation(dayKey, projIdx, taskIdx, "owner_archive");
             render(loadAll());
             closeAdminApproveModal();
           });
@@ -2451,6 +3255,7 @@
 
         tools.appendChild(moreWrap);
 
+        row.appendChild(taskMoveWrap);
         row.appendChild(cb);
         row.appendChild(titleCol);
         row.appendChild(tools);
@@ -2476,16 +3281,13 @@
     if(dailyLog) dailyLog.value = entry.dailyLog || "";
 
     let projectList = entry.projects;
-    if(isFutureDay(currentDay)){
-      projectList = getFutureDayView(db, currentDay);
-    }
     const c = countTasks({ ...entry, projects: projectList });
     if(countsPill) countsPill.textContent = `${projectList.length} project${projectList.length===1?"":"s"}`;
     if(mDone) mDone.textContent = c.done;
     if(mBlocked) mBlocked.textContent = c.blocked;
     if(mTotal) mTotal.textContent = c.total;
 
-    if(projectsEl) renderProjects(entry, projectList);
+    if(projectsEl) renderProjects(entry, undefined);
     const execPanel = document.getElementById("execListPanel");
     if(execPanel && execPanel.style.display !== "none") renderExecList({ ...entry, projects: projectList });
     const pagePanel = document.getElementById("pageLoadPanel");
@@ -2657,7 +3459,21 @@
       const projTitle = (p.title || "").trim() || "(no project title)";
       const projLi = document.createElement("li");
       projLi.className = "execListProj";
-      projLi.textContent = projTitle;
+      projLi.style.display = "flex";
+      projLi.style.alignItems = "center";
+      projLi.style.justifyContent = "flex-start";
+      projLi.style.gap = "6px";
+      const projName = document.createElement("span");
+      projName.textContent = projTitle;
+      projName.style.fontWeight = "900";
+      const projPageIcon = document.createElement("a");
+      projPageIcon.href = projectPageHref(p.id);
+      projPageIcon.className = "btn secondary iconBtn";
+      projPageIcon.textContent = "↗";
+      projPageIcon.title = "Open project page";
+      projPageIcon.setAttribute("aria-label", "Open project page");
+      projLi.appendChild(projName);
+      projLi.appendChild(projPageIcon);
       listEl.appendChild(projLi);
       const subWrap = document.createElement("li");
       subWrap.className = "execListSubWrap";
@@ -2709,15 +3525,27 @@
   function applyViewMode(){
     const execPanel = document.getElementById("execListPanel");
     const pagePanel = document.getElementById("pageLoadPanel");
+    const projectsSectionTitle = document.getElementById("projectsSectionTitle");
+    const projectsCards = document.getElementById("projects");
+    const newProjectBtn = document.getElementById("newProjectBtn");
     if(gearExpandMode){
       if(execPanel) execPanel.style.display = "block";
       if(pagePanel) pagePanel.style.display = "block";
+      if(projectsSectionTitle) projectsSectionTitle.style.display = "";
+      if(projectsCards) projectsCards.style.display = "";
+      if(newProjectBtn) newProjectBtn.style.display = "";
     } else {
       if(pagePanel) pagePanel.style.display = "none";
       if(projectsViewMode){
         if(execPanel) execPanel.style.display = "none";
+        if(projectsSectionTitle) projectsSectionTitle.style.display = "";
+        if(projectsCards) projectsCards.style.display = "";
+        if(newProjectBtn) newProjectBtn.style.display = "";
       } else {
         if(execPanel) execPanel.style.display = execListOpen ? "block" : "none";
+        if(projectsSectionTitle) projectsSectionTitle.style.display = "none";
+        if(projectsCards) projectsCards.style.display = "none";
+        if(newProjectBtn) newProjectBtn.style.display = "none";
       }
     }
   }
@@ -2726,22 +3554,16 @@
     if(gearExpandMode){
       gearExpandMode = false;
       if(pageGearBtn) pageGearBtn.classList.remove("gearExpandOn");
-      execListOpen = true;
-      projectsViewMode = false;
-      if(projectsBtn) projectsBtn.classList.remove("gearExpandOn");
-      execListBtn.classList.add("gearExpandOn");
-      collapseAllProjects();
-    } else {
-      execListOpen = !execListOpen;
-      projectsViewMode = false;
-      if(projectsBtn) projectsBtn.classList.remove("gearExpandOn");
-      execListBtn.classList.toggle("gearExpandOn", execListOpen);
-      if(execListOpen) collapseAllProjects();
     }
+    execListOpen = true;
+    projectsViewMode = false;
+    if(projectsBtn) projectsBtn.classList.remove("gearExpandOn");
+    execListBtn.classList.add("gearExpandOn");
+    collapseAllProjects();
     if(execListOpen){
       const db = loadAll();
       const entry = ensureDay(db, currentDay);
-      const projectList = isFutureDay(currentDay) ? getFutureDayView(db, currentDay) : entry.projects;
+      const projectList = entry.projects;
       renderExecList({ ...entry, projects: projectList });
     }
     applyViewMode();
@@ -2753,13 +3575,11 @@
       gearExpandMode = false;
       if(pageGearBtn) pageGearBtn.classList.remove("gearExpandOn");
     }
-    projectsViewMode = !projectsViewMode;
-    projectsBtn.classList.toggle("gearExpandOn", projectsViewMode);
-    if(projectsViewMode){
-      execListOpen = false;
-      if(execListBtn) execListBtn.classList.remove("gearExpandOn");
-      collapseAllProjects();
-    }
+    projectsViewMode = true;
+    projectsBtn.classList.add("gearExpandOn");
+    execListOpen = false;
+    if(execListBtn) execListBtn.classList.remove("gearExpandOn");
+    collapseAllProjects();
     applyViewMode();
     render(loadAll());
   });
@@ -2771,7 +3591,7 @@
     const execPanel = document.getElementById("execListPanel");
     const db = loadAll();
     const entry = ensureDay(db, currentDay);
-    const projectList = isFutureDay(currentDay) ? getFutureDayView(db, currentDay) : entry.projects;
+    const projectList = entry.projects;
     if(gearExpandMode){
       if(pagePanel) pagePanel.style.display = "block";
       if(execPanel) execPanel.style.display = "block";
@@ -2800,10 +3620,12 @@
       id: uid("proj"),
       title: "",
       teamMemberIds: [],
+      ownerWorkspaceId: normalizeMemberId(WORKSPACE_ID),
+      _sharedWithIds: [],
       tasks: [],
       collapsed: false
     });
-    saveAll(db);
+    persistEntry(entry);
     render(db);
   });
 
@@ -2833,55 +3655,203 @@
         id: uid("proj"),
         title: "Inbox",
         teamMemberIds: [],
+        ownerWorkspaceId: normalizeMemberId(WORKSPACE_ID),
+        _sharedWithIds: [],
         tasks: [],
         collapsed: false
       });
     }
     const p = entry.projects[0];
     p.tasks = p.tasks || [];
-    p.tasks.push({ id: uid("task"), title:text, status:"todo", steps:[], notes:"from quick capture", byWhen:null, createdAt:Date.now(), completedAt:null, carriedFrom:null });
+    p.tasks.push({ id: uid("task"), title:text, status:"todo", steps:[], notes:"from quick capture", byWhen:iso(new Date()), createdAt:Date.now(), completedAt:null, carriedFrom:null });
 
     $("quickCapture").value = "";
-    saveAll(db);
+    persistEntry(entry);
     render(db);
   });
 
   // Member mode: fetch member and update UI
   async function loadMemberContext(){
-    if(!MEMBER_ID) return;
+    if(!MEMBER_ID){
+      window.CURRENT_MEMBER_NAME = DEFAULT_MEMBER_NAME;
+      const brandEl = document.getElementById("brandTitle");
+      if(brandEl) brandEl.textContent = DEFAULT_MEMBER_NAME + " — Daily Planner";
+      document.title = DEFAULT_MEMBER_NAME + " — Daily Planner";
+      return;
+    }
+    // Show member label immediately; Firestore fetch can refine it later.
+    window.CURRENT_MEMBER_NAME = String(MEMBER_ID).toUpperCase();
+    const brandEl = document.getElementById("brandTitle");
+    if(brandEl) brandEl.textContent = String(MEMBER_ID).toUpperCase() + " — Daily Planner";
+    document.title = String(MEMBER_ID).toUpperCase() + " — Daily Planner";
     const db = window.firebaseDb;
     if(!db) return;
     try {
       const snap = await db.collection("teamMembers").doc(MEMBER_ID).get();
       if(snap.exists){
         const m = snap.data();
-        window.CURRENT_MEMBER_NAME = m.name || MEMBER_ID;
+        window.CURRENT_MEMBER_NAME = m.name || String(MEMBER_ID).toUpperCase();
         const brandEl = document.getElementById("brandTitle");
-        if(brandEl) brandEl.textContent = (m.name || MEMBER_ID) + "'s Planner";
-        document.title = (m.name || MEMBER_ID) + " — Daily Planner";
+        if(brandEl) brandEl.textContent = (m.name || String(MEMBER_ID).toUpperCase()) + " — Daily Planner";
+        document.title = (m.name || String(MEMBER_ID).toUpperCase()) + " — Daily Planner";
         const adminLink = document.getElementById("adminLink");
         if(adminLink) adminLink.style.display = "inline-flex";
       }
     } catch(e){ console.warn("Member load failed:", e); }
   }
 
-  // Init
-  try {
-    if(navDate) navDate.value = currentDay;
-    if(navTodayStamp) navTodayStamp.textContent = currentDay;
-    const db = loadAll();
-    ensureDay(db, currentDay);
-    saveAll(db);
-    render(db);
-    applyCollapsibles();
-    startTeamWatch();
-    loadMemberContext().then(() => render(loadAll()));
-  } catch(e) {
-    console.error("[planner] init failed", e);
-    try { render(loadAll()); } catch(e2) { console.error("[planner] render fallback failed", e2); }
+  let appBooted = false;
+  function bootApp(){
+    if(appBooted) return;
+    appBooted = true;
+    try {
+      ensureBlankWorkspaceForNewMember();
+      repairAllWorkspaceCorruption();
+      refreshArchiveLink();
+      if(navDate) navDate.value = currentDay;
+      if(navTodayStamp) navTodayStamp.textContent = currentDay;
+      const db = loadAll();
+      normalizeProjectIds(db);
+    const dateTouchedDays = normalizeTaskAndStepDates(db);
+    if(dateTouchedDays.size){
+      for(const d of dateTouchedDays){
+        if(db[d]) syncProjectSharing(db[d]);
+      }
+    }
+      const touchedDays = migrateDoneTasksToArchive(db);
+      if(touchedDays.size){
+        for(const d of touchedDays){
+          if(db[d]) syncProjectSharing(db[d]);
+        }
+      }
+      enforceArchiveRemovals(db);
+      repairCarryCorruption(db);
+      const entry = ensureDay(db, currentDay);
+      dedupeEntryProjects(entry);
+      syncProjectSharing(entry);
+      saveAll(db);
+      render(db);
+      applyCollapsibles();
+      startTeamWatch();
+      loadMemberContext().then(() => render(loadAll()));
+    } catch(e) {
+      console.error("[planner] init failed", e);
+      try { render(loadAll()); } catch(e2) { console.error("[planner] render fallback failed", e2); }
+    }
   }
+
+  // --- AUTH GATE (Email/Password) : compat firebase.auth() ---
+  (function wireEmailPasswordAuthGate(){
+    const gate = document.getElementById("authGate");
+    const emailEl = document.getElementById("authEmail");
+    const passEl = document.getElementById("authPass");
+    const signInBtn = document.getElementById("authSignInBtn");
+    const createBtn = document.getElementById("authCreateBtn");
+    const signOutBtn = document.getElementById("authSignOutBtn");
+    const errEl = document.getElementById("authErr");
+
+    const TEAM_EMAILS = new Set([
+      "blk911@gmail.com",
+      "admin@venmebaby.com",
+      "taylorpackard@icloud.com",
+      "oreo12798@gmail.com",
+    ]);
+
+    function showGate(msg){
+      if(gate) gate.style.display = "flex";
+      if(errEl){
+        if(msg){ errEl.style.display = "block"; errEl.textContent = msg; }
+        else { errEl.style.display = "none"; errEl.textContent = ""; }
+      }
+    }
+    function hideGate(){
+      if(gate) gate.style.display = "none";
+      if(errEl){ errEl.style.display = "none"; errEl.textContent = ""; }
+    }
+
+    const auth = window.firebaseAuth || null;
+    if(!auth){
+      console.warn("[auth] firebaseAuth missing; showing gate");
+      showGate("Auth not initialized. Check firebase-auth script include.");
+      return;
+    }
+
+    signInBtn && signInBtn.addEventListener("click", async () => {
+      try{
+        const email = (emailEl?.value || "").trim().toLowerCase();
+        const pass = (passEl?.value || "").trim();
+        if(!email || !pass) return showGate("Enter email + password.");
+        if(!TEAM_EMAILS.has(email)) return showGate("Not authorized for this planner.");
+        await auth.signInWithEmailAndPassword(email, pass);
+      }catch(e){
+        console.error("[auth] signIn failed", e);
+        showGate((e && e.message) ? e.message : "Sign-in failed.");
+      }
+    });
+
+    createBtn && createBtn.addEventListener("click", async () => {
+      try{
+        const email = prompt("New user email:");
+        const password = prompt("Temporary password (min 6 chars):");
+
+        if(!email || !password) return;
+        if(password.length < 6) return alert("Password too short.");
+
+        await auth.createUserWithEmailAndPassword(email.trim(), password.trim());
+        alert("User created successfully.");
+      }catch(e){
+        console.error(e);
+        alert(e.message);
+      }
+    });
+
+    passEl?.addEventListener("keydown", (e) => {
+      if(e.key === "Enter"){
+        e.preventDefault();
+        signInBtn?.click();
+      }
+    });
+
+    signOutBtn && signOutBtn.addEventListener("click", async () => {
+      try { await auth.signOut(); } catch(e){ console.error(e); }
+    });
+
+    auth.onAuthStateChanged((user) => {
+      if(!user){
+        if(signOutBtn) signOutBtn.style.display = "none";
+        if(createBtn) createBtn.style.display = "none";
+        showGate();
+        return;
+      }
+
+      const email = String(user.email || "").toLowerCase();
+      if(!TEAM_EMAILS.has(email)){
+        if(signOutBtn) signOutBtn.style.display = "inline-flex";
+        if(createBtn) createBtn.style.display = "none";
+        showGate("Signed in, but not authorized for this planner.");
+        return;
+      }
+
+      if(signOutBtn) signOutBtn.style.display = "inline-flex";
+      // Only ADMIN can create users
+      if(user.email === "admin@venmebaby.com"){
+        createBtn && (createBtn.style.display = "inline-flex");
+      }else{
+        createBtn && (createBtn.style.display = "none");
+      }
+      hideGate();
+      bootApp();
+    }, (err) => {
+      console.error("[auth] onAuthStateChanged failed", err);
+      showGate("Auth listener failed.");
+      if(signOutBtn) signOutBtn.style.display = "none";
+    });
+
+    showGate();
+  })();
 
 })();
 </script>
 </body>
+</html>
 </html>
