@@ -1,7 +1,7 @@
 (function(){
   const DEFAULT_LINKS = [
-    { id: "team", label: "TEAM", href: "/" },
-    { id: "marketing", label: "MARKETING", href: "https://vmb-mkt.vercel.app/" },
+    { id: "team", label: "TEAM", href: "https://vmb-team-planner.vercel.app/" },
+    { id: "marketing", label: "MARKETING", href: "https://vmb-mkt.vercel.app/owner-deck" },
     { id: "decksfaq", label: "DECKS/FAQ", href: "https://vmb-mkt.vercel.app/dashboard/targets" }
   ];
 
@@ -18,7 +18,9 @@
     if(!target) return false;
     const here = window.location;
     if(target.origin !== here.origin){
-      return target.hostname === here.hostname;
+      if(target.hostname !== here.hostname) return false;
+      if(target.pathname === "/") return here.pathname === "/" || here.pathname.endsWith("/index.html");
+      return here.pathname === target.pathname || here.pathname.startsWith(target.pathname + "/");
     }
     if(target.pathname === "/"){
       return here.pathname === "/" || here.pathname.endsWith("/index.html");
