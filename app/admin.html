@@ -320,6 +320,8 @@
       <button type="button" class="btn" id="signOutBtn">SIGN OUT</button>
       <button type="button" class="btn secondary" id="revBtn">REV <span id="revPill">1.0</span></button>
       <button type="button" class="btn secondary" id="backupNowBtn">BACKUP NOW</button>
+      <button type="button" class="btn secondary" id="importBackupBtn">IMPORT BACKUP</button>
+      <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none;" />
       <button type="button" class="btn good" id="addMembersBtn">ADD MEMBERS</button>
     </div>
   </nav>
@@ -558,6 +560,43 @@
       if(btn){ btn.disabled = false; btn.textContent = "BACKUP NOW"; }
     }
   }
+  function applyLocalStorageSnapshot(snapshot){
+    if(!snapshot || typeof snapshot !== "object") throw new Error("Backup missing localStorage snapshot.");
+    const allowed = (k) => {
+      return k === "vmb_team"
+        || k === "planner.ui.v1"
+        || k === "planner.forceMember"
+        || k.startsWith("daily_planner.");
+    };
+    let applied = 0;
+    for(const [k, v] of Object.entries(snapshot)){
+      if(!allowed(k)) continue;
+      if(typeof v === "string"){
+        localStorage.setItem(k, v);
+      } else {
+        localStorage.setItem(k, JSON.stringify(v));
+      }
+      applied++;
+    }
+    return applied;
+  }
+  function importBackupFromFile(file){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read backup file."));
+      reader.onload = () => {
+        try {
+          const payload = JSON.parse(String(reader.result || "{}"));
+          const snapshot = payload && payload.localStorage ? payload.localStorage : null;
+          const applied = applyLocalStorageSnapshot(snapshot);
+          resolve({ applied, capturedAt: payload?.capturedAt || null });
+        } catch(e){
+          reject(e);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
 
   function slug(name){
     return (name || "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "member";
@@ -710,6 +749,30 @@
   $("addMembersBtn").addEventListener("click", openAddModal);
   $("revBtn").addEventListener("click", openRevModal);
   $("backupNowBtn").addEventListener("click", exportBackupNow);
+  $("importBackupBtn").addEventListener("click", () => {
+    const picker = $("importBackupFile");
+    if(!picker) return;
+    picker.value = "";
+    picker.click();
+  });
+  $("importBackupFile").addEventListener("change", async (e) => {
+    const input = e.target;
+    const file = input && input.files && input.files[0] ? input.files[0] : null;
+    if(!file) return;
+    const btn = $("importBackupBtn");
+    if(btn){ btn.disabled = true; btn.textContent = "IMPORTING..."; }
+    try {
+      const result = await importBackupFromFile(file);
+      alert("Imported backup snapshot (" + result.applied + " keys). Reloading...");
+      location.href = "/index.html";
+    } catch(err){
+      console.error("Import backup failed:", err);
+      alert("Import failed: " + (err && err.message ? err.message : String(err)));
+    } finally {
+      if(btn){ btn.disabled = false; btn.textContent = "IMPORT BACKUP"; }
+      if(input) input.value = "";
+    }
+  });
   $("revCloseBtn").addEventListener("click", closeRevModal);
   $("revCancelBtn").addEventListener("click", closeRevModal);
   $("revSaveBtn").addEventListener("click", saveRevFromModal);
