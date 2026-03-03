@@ -865,9 +865,15 @@
   setNavDate();
   setRevPill();
   const host = String(location.hostname || "").toLowerCase();
-  const isLocalDev = host === "localhost" || host === "127.0.0.1" || host === "::1";
-  if(isLocalDev){
-    // Local-only bypass so admin dev doesn't require sign-in.
+  const authBypassHosts = new Set([
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "vmb-team-planner.vercel.app"
+  ]);
+  const isAuthBypassHost = authBypassHosts.has(host);
+  if(isAuthBypassHost){
+    // Bypass auth gate on approved hosts.
     try { $("signInBtn").style.display = "none"; } catch(e){}
     try { $("signOutBtn").style.display = "none"; } catch(e){}
     startWatch();
