@@ -5,10 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Admin — VMB Team</title>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+  <script src="global-nav.js" defer></script>
   <script>
     var firebaseConfig = { apiKey: "AIzaSyA9uPFEC9jTpbxGNkSuGTtaVn5ojU5Ltl8", authDomain: "vmb-team.firebaseapp.com", projectId: "vmb-team", storageBucket: "vmb-team.firebasestorage.app", messagingSenderId: "288248384764", appId: "1:288248384764:web:b406a09f7e49173c5edb79", measurementId: "G-CMRTE1WBBD" };
-    if (typeof firebase !== 'undefined') { firebase.initializeApp(firebaseConfig); window.firebaseDb = firebase.firestore(); }
+    if (typeof firebase !== 'undefined') {
+      if(!firebase.apps || firebase.apps.length === 0) firebase.initializeApp(firebaseConfig);
+      window.firebaseDb = firebase.firestore();
+      window.firebaseAuth = firebase.auth ? firebase.auth() : null;
+    }
   </script>
   <style>
     :root{
@@ -57,6 +63,25 @@
       gap: 10px;
     }
     .adminNavActions a{ text-decoration: none; }
+    .globalTopLinks{
+      display:flex;
+      align-items:center;
+      gap: 8px;
+      padding: 2px 0;
+    }
+    .globalNavBtn{
+      height: 30px;
+      padding: 0 10px;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .globalNavBtn.isActive{
+      background: rgba(37,99,235,0.16);
+      border-color: rgba(37,99,235,0.28);
+      color: #1d4ed8;
+    }
 
     .btn{
       display: inline-flex;
@@ -266,6 +291,23 @@
       gap: 10px;
     }
     .iconBtn{ font-size: 20px; line-height: 1; padding: 0 10px; }
+    textarea{
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      outline: none;
+      width: 100%;
+      min-height: 96px;
+      resize: vertical;
+    }
+    textarea:focus{
+      border-color: rgba(37,99,235,0.55);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+    .revQuickBtns{ display:flex; gap:8px; margin:8px 0 0 0; }
   </style>
 </head>
 <body>
@@ -274,7 +316,12 @@
   <nav class="adminNav">
     <span class="adminNavDate" id="adminNavDate">—</span>
     <div class="adminNavActions">
+      <div class="globalTopLinks" data-global-nav-slot></div>
       <a href="index.html" class="btn secondary">← Back to Planner</a>
+      <button type="button" class="btn" id="signInBtn">SIGN IN</button>
+      <button type="button" class="btn" id="signOutBtn">SIGN OUT</button>
+      <button type="button" class="btn secondary" id="revBtn">REV <span id="revPill">1.0</span></button>
+      <button type="button" class="btn secondary" id="backupNowBtn">BACKUP NOW</button>
       <button type="button" class="btn good" id="addMembersBtn">ADD MEMBERS</button>
     </div>
   </nav>
@@ -329,12 +376,118 @@
     </div>
   </div>
 
+  <!-- Revision modal -->
+  <div class="modalOverlay" id="revOverlay" aria-hidden="true">
+    <div class="modalCard">
+      <div class="modalHead">
+        <span class="modalTitle">Revision</span>
+        <button type="button" class="btn secondary iconBtn" id="revCloseBtn" title="Close">&times;</button>
+      </div>
+      <div class="modalBody">
+        <div class="field">
+          <label>Current Revision</label>
+          <input id="revInput" value="1.0" />
+          <div class="revQuickBtns">
+            <button type="button" class="btn secondary" id="revPlusPointOne">+0.1</button>
+            <button type="button" class="btn secondary" id="revPlusOne">+1.0</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Revision Notes</label>
+          <textarea id="revNotes" placeholder="What changed in this revision?"></textarea>
+        </div>
+      </div>
+      <div class="modalFoot">
+        <button type="button" class="btn secondary" id="revCancelBtn">CANCEL</button>
+        <button type="button" class="btn good" id="revSaveBtn">SAVE REV</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 (function(){
   const $ = (id) => document.getElementById(id);
   const db = window.firebaseDb;
+  const auth = (typeof firebase !== "undefined" && firebase.auth) ? firebase.auth() : null;
+  const TEAM_ID = "vmb-team";
+  const MEMBER_INIT_KEY = "daily_planner.member_init.v1";
+  const REV_META_KEY = "vmb.revision.meta";
   let MEMBERS = [];
   let MEMBER_PROJECTS = {}; // memberId -> [ project names ] (placeholder; could be from Firestore later)
+  function membersCollection(){
+    try {
+      if(!db || !db.collection) return null;
+      return db.collection("teamMembers");
+    } catch(e){
+      console.error("[ADMIN] membersCollection failed", e);
+      return null;
+    }
+  }
+  function loadRevisionMeta(){
+    try {
+      const v = JSON.parse(localStorage.getItem(REV_META_KEY) || "{}");
+      return {
+        currentRev: typeof v.currentRev === "string" && v.currentRev.trim() ? v.currentRev : "1.0",
+        notes: typeof v.notes === "string" ? v.notes : "",
+        lastBackupAt: v.lastBackupAt || null
+      };
+    } catch {
+      return { currentRev: "1.0", notes: "", lastBackupAt: null };
+    }
+  }
+  function saveRevisionMeta(meta){
+    try { localStorage.setItem(REV_META_KEY, JSON.stringify(meta)); } catch(e){ console.warn(e); }
+  }
+  function setRevPill(){
+    const meta = loadRevisionMeta();
+    const el = $("revPill");
+    if(el) el.textContent = meta.currentRev;
+  }
+  function revToTenths(rev){
+    const n = Number.parseFloat(String(rev || "1.0"));
+    return Number.isFinite(n) ? Math.round(n * 10) : 10;
+  }
+  function tenthsToRev(n){
+    return (Math.max(0, Number(n) || 0) / 10).toFixed(1);
+  }
+  function bumpRevision(deltaTenths){
+    const inp = $("revInput");
+    if(!inp) return;
+    const next = revToTenths(inp.value) + deltaTenths;
+    inp.value = tenthsToRev(next);
+  }
+  function openRevModal(){
+    const overlay = $("revOverlay");
+    const meta = loadRevisionMeta();
+    const revInput = $("revInput");
+    const notes = $("revNotes");
+    if(revInput) revInput.value = meta.currentRev;
+    if(notes) notes.value = meta.notes || "";
+    if(overlay){ overlay.classList.add("show"); overlay.setAttribute("aria-hidden", "false"); }
+  }
+  function closeRevModal(){
+    const overlay = $("revOverlay");
+    if(overlay){ overlay.classList.remove("show"); overlay.setAttribute("aria-hidden", "true"); }
+  }
+  function saveRevFromModal(){
+    const revInput = $("revInput");
+    const notes = $("revNotes");
+    const rev = tenthsToRev(revToTenths(revInput ? revInput.value : "1.0"));
+    const existing = loadRevisionMeta();
+    saveRevisionMeta({ ...existing, currentRev: rev, notes: notes ? notes.value : existing.notes });
+    setRevPill();
+    closeRevModal();
+  }
+  function clearMemberWorkspace(memberId){
+    try {
+      const id = String(memberId || "").trim().toLowerCase();
+      if(!id || id === "jsw" || id === "admin") return;
+      localStorage.removeItem("daily_planner.v1." + id);
+      const map = JSON.parse(localStorage.getItem(MEMBER_INIT_KEY) || "{}");
+      delete map[id];
+      localStorage.setItem(MEMBER_INIT_KEY, JSON.stringify(map));
+    } catch(e){ console.warn("clearMemberWorkspace failed", e); }
+  }
 
   function serverTimestamp(){
     try {
@@ -352,6 +505,60 @@
   function setNavDate(){
     const el = $("adminNavDate");
     if(el) el.textContent = todayStr();
+  }
+  function safeParse(value){
+    try { return JSON.parse(value); } catch { return value; }
+  }
+  function stamp(){
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "_" + pad(d.getHours()) + "-" + pad(d.getMinutes());
+  }
+  function collectLocalStorageSnapshot(){
+    const out = {};
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(!k) continue;
+      if(k.startsWith("daily_planner.") || k === "vmb_team" || k === "planner.ui.v1" || k === "planner.forceMember"){
+        out[k] = safeParse(localStorage.getItem(k));
+      }
+    }
+    return out;
+  }
+  async function exportBackupNow(){
+    const btn = $("backupNowBtn");
+    if(btn){ btn.disabled = true; btn.textContent = "BACKING UP..."; }
+    try {
+      const revMeta = loadRevisionMeta();
+      const payload = {
+        version: "0.8rev",
+        revision: revMeta.currentRev,
+        revisionNotes: revMeta.notes || "",
+        capturedAt: new Date().toISOString(),
+        origin: location.origin,
+        path: location.pathname,
+        localStorage: collectLocalStorageSnapshot(),
+        firestore: {}
+      };
+      if(db){
+        try {
+          const membersRef = membersCollection();
+          const snap = membersRef ? await membersRef.orderBy("name", "asc").get() : null;
+          payload.firestore.teamMembers = snap ? snap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+        } catch(e){
+          payload.firestore.teamMembersError = String(e && e.message ? e.message : e);
+        }
+      }
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "vmb-data-backup-r" + String(revMeta.currentRev).replace(/\./g, "_") + "-" + stamp() + ".json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      saveRevisionMeta({ ...revMeta, lastBackupAt: new Date().toISOString() });
+    } finally {
+      if(btn){ btn.disabled = false; btn.textContent = "BACKUP NOW"; }
+    }
   }
 
   function slug(name){
@@ -396,7 +603,10 @@
     const updatedAt = ts !== null ? ts : nowStamp();
 
     try {
-      await db.collection("teamMembers").doc(docId).set({
+      const membersRef = membersCollection();
+      if(!membersRef){ throw new Error("members collection unavailable"); }
+      await membersRef.doc(docId).set({
+        id: docId,
         name,
         phone: phone || null,
         email: email || null,
@@ -405,6 +615,8 @@
         createdAt: createdAt,
         updatedAt: updatedAt
       }, { merge: true });
+      // "Add Member" always provisions a blank workspace for non-JSW members.
+      clearMemberWorkspace(docId);
       closeAddModal();
       // list updates via onSnapshot
     } catch (err) {
@@ -427,6 +639,8 @@
     list.innerHTML = "";
     for(const m of MEMBERS){
       const id = docIdFor(m);
+      const workspaceMemberId = slug(m.name || id);
+      const workspaceHref = workspaceMemberId === "jsw" ? "/index.html" : ("/index.html?member=" + encodeURIComponent(workspaceMemberId));
       const meta = [m.phone || "", m.email || ""].filter(Boolean).join(" • ");
       const addDate = formatAddDate(m);
       const projNames = MEMBER_PROJECTS[id] && MEMBER_PROJECTS[id].length ? MEMBER_PROJECTS[id] : [];
@@ -448,8 +662,8 @@
           </div>
         </div>
         <div class="memberRowActions">
-          <a href="member.html?id=${encodeURIComponent(id)}" class="btn good">Open Page</a>
-          <button type="button" class="btn danger btnRemove" data-id="${id}" ${(m.id === "admin" || m.id === "jsw") ? "disabled" : ""}>Remove</button>
+          <a href="${workspaceHref}" class="btn good workspaceBtn" data-workspace-id="${workspaceMemberId}">WORKSPACE</a>
+          <button type="button" class="btn danger btnRemove" data-id="${id}" data-workspace-id="${workspaceMemberId}" ${(workspaceMemberId === "admin" || workspaceMemberId === "jsw") ? "disabled" : ""}>Remove</button>
         </div>
       `;
       list.appendChild(row);
@@ -470,10 +684,25 @@
     list.querySelectorAll(".btnRemove").forEach(btn => {
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-id");
+        const workspaceId = btn.getAttribute("data-workspace-id");
         if(!confirm("Remove this member?")) return;
         try {
-          await db.collection("teamMembers").doc(id).delete();
+          const membersRef = membersCollection();
+          if(!membersRef){ throw new Error("members collection unavailable"); }
+          await membersRef.doc(id).delete();
+          clearMemberWorkspace(id);
+          clearMemberWorkspace(workspaceId);
         } catch(e){ console.error(e); }
+      });
+    });
+
+    list.querySelectorAll(".workspaceBtn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const wid = String(btn.getAttribute("data-workspace-id") || "").trim().toLowerCase();
+        try {
+          if(!wid || wid === "jsw") localStorage.removeItem("planner.forceMember");
+          else localStorage.setItem("planner.forceMember", wid);
+        } catch(e){ console.warn("workspaceBtn handoff failed", e); }
       });
     });
 
@@ -481,10 +710,34 @@
   }
 
   $("addMembersBtn").addEventListener("click", openAddModal);
+  $("revBtn").addEventListener("click", openRevModal);
+  $("backupNowBtn").addEventListener("click", exportBackupNow);
+  $("revCloseBtn").addEventListener("click", closeRevModal);
+  $("revCancelBtn").addEventListener("click", closeRevModal);
+  $("revSaveBtn").addEventListener("click", saveRevFromModal);
+  $("revPlusPointOne").addEventListener("click", () => bumpRevision(1));
+  $("revPlusOne").addEventListener("click", () => bumpRevision(10));
+  $("revOverlay").addEventListener("click", (e) => { if(e.target === e.currentTarget) closeRevModal(); });
   $("addMemberClose").addEventListener("click", closeAddModal);
   $("addMemberOverlay").addEventListener("click", (e) => { if(e.target === e.currentTarget) closeAddModal(); });
   $("memberSaveBtn").addEventListener("click", () => saveMember());
   $("memberName").addEventListener("keydown", (e) => { if(e.key === "Enter"){ e.preventDefault(); saveMember(); } });
+  $("signInBtn").addEventListener("click", async () => {
+    const email = prompt("Email:");
+    const pass = prompt("Password:");
+    if(!email || !pass) return;
+    try {
+      await firebase.auth().signInWithEmailAndPassword(email.trim(), pass);
+    } catch(e){
+      alert("Sign-in failed: " + (e && e.message ? e.message : e));
+      console.error(e);
+    }
+  });
+  $("signOutBtn").addEventListener("click", async () => {
+    try { await firebase.auth().signOut(); } catch(e){}
+    try { localStorage.removeItem("planner.forceMember"); } catch(e){}
+    location.reload();
+  });
 
   document.addEventListener("click", (e) => {
     if(!e.target.closest(".projDropWrap")){
@@ -499,18 +752,54 @@
       renderMembers();
       return;
     }
-    db.collection("teamMembers").orderBy("name", "asc").onSnapshot(snap => {
-      MEMBERS = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.active !== false);
+    const membersRef = membersCollection();
+    console.log("[ADMIN] firebase loaded?", !!window.firebase);
+    try { console.log("[ADMIN] projectId:", firebase?.apps?.[0]?.options?.projectId); } catch(e){}
+    console.log("[ADMIN] db exists?", !!db);
+    console.log("[ADMIN] membersRef?", membersRef ? "YES" : "NO");
+    try { console.log("[ADMIN] membersRef.path:", membersRef?.path); } catch(e){}
+    if(!membersRef){
+      MEMBERS = [];
+      renderMembers();
+      return;
+    }
+    membersRef.onSnapshot(snap => {
+      console.log("[ADMIN] teamMembers snapshot size:", snap.size, snap.docs.map(d => d.id));
+      MEMBERS = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const aActive = a.active !== false ? 1 : 0;
+          const bActive = b.active !== false ? 1 : 0;
+          if(aActive !== bActive) return bActive - aActive;
+          const an = String(a.name || "").toLowerCase();
+          const bn = String(b.name || "").toLowerCase();
+          return an.localeCompare(bn);
+        });
       renderMembers();
     }, err => {
-      console.error("Admin teamMembers listener error:", err);
+      console.log("[ADMIN] snapshot ERROR:", err?.code, err?.message, err);
+      console.error("Admin members listener error:", err);
       MEMBERS = [];
       renderMembers();
     });
   }
 
   setNavDate();
-  startWatch();
+  setRevPill();
+  if(auth && typeof auth.onAuthStateChanged === "function"){
+    auth.onAuthStateChanged((u) => {
+      console.log("[ADMIN] auth user:", u ? { uid: u.uid, email: u.email } : null);
+      if(u) startWatch();
+      else {
+        MEMBERS = [];
+        renderMembers();
+        console.warn("[ADMIN] Not signed in. You must sign in for teamMembers to load.");
+      }
+    });
+  } else {
+    console.warn("[ADMIN] auth unavailable; startWatch disabled until auth is available.");
+    // startWatch(); // now invoked after auth state is ready
+  }
 })();
 </script>
 </body>
