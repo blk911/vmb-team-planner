@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/global-nav.js", "destination": "/app/global-nav.js" },
     { "source": "/", "destination": "/app/index.html" },
     { "source": "/admin", "destination": "/app/admin.html" },
     { "source": "/member", "destination": "/app/member.html" },
