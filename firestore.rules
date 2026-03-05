@@ -29,6 +29,12 @@ service cloud.firestore {
         get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data.active == true;
     }
 
+    function isOwnMemberDoc() {
+      return signedIn() &&
+        resource.data.email != null &&
+        resource.data.email == email();
+    }
+
     // Default deny (VERY IMPORTANT)
     match /{document=**} {
       allow read, write: if false;
@@ -36,7 +42,7 @@ service cloud.firestore {
 
     // Collections your app uses
     match /teamMembers/{memberId} {
-      allow read: if isTeam();
+      allow read: if isTeam() || isOwnMemberDoc();
       allow write: if email() == "admin@venmebaby.com";
     }
 

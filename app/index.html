@@ -3926,12 +3926,25 @@
       }
 
       try{
+        let member = null;
         const memberSnap = await db.collection("teamMembers").doc(String(user.uid)).get();
-        if(!memberSnap.exists){
+        if(memberSnap.exists){
+          member = memberSnap.data() || {};
+        } else {
+          // Legacy fallback: older records keyed by workspace slug instead of auth uid.
+          const byEmail = await db
+            .collection("teamMembers")
+            .where("email", "==", email)
+            .limit(1)
+            .get();
+          if(!byEmail.empty){
+            member = byEmail.docs[0].data() || {};
+          }
+        }
+        if(!member){
           showGate("Signed in, but no active member profile found.");
           return;
         }
-        const member = memberSnap.data() || {};
         if(member.active === false){
           showGate("Your member profile is inactive.");
           return;
