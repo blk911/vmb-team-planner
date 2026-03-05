@@ -3863,6 +3863,11 @@
       if(ADMIN_EMAILS.has(email)){
         try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
         createBtn && (createBtn.style.display = "none");
+        // Admin sign-in should land on planner admin tools.
+        if(!location.pathname.endsWith("/admin") && !location.pathname.endsWith("/admin.html")){
+          location.href = "/admin";
+          return;
+        }
         hideGate();
         bootApp();
         return;
