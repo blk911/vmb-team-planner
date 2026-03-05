@@ -42,7 +42,7 @@
     for(const link of links){
       if(!link || !link.href || !link.label) continue;
       const a = document.createElement("a");
-      a.className = "btn secondary globalNavBtn";
+      a.className = "globalNavBtn";
       a.href = link.href;
       a.textContent = link.label;
       a.title = link.label;

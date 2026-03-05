@@ -126,11 +126,19 @@
       padding: 2px 0;
     }
     .globalNavBtn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
       height: 30px;
       padding: 0 10px;
-      font-size: 11px;
-      letter-spacing: 0.05em;
       border-radius: 999px;
+      border: 1px solid rgba(15,23,42,0.12);
+      background: rgba(15,23,42,0.04);
+      color: #0f172a;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
       white-space: nowrap;
     }
     .globalNavBtn.isActive{
@@ -379,18 +387,16 @@
       <div class="adminNavActions">
         <a href="index.html" class="subNavAction">Back to Planner</a>
         <span class="subNavSep">:</span>
-        <button type="button" class="subNavAction" id="signInBtn">Sign In</button>
-        <span class="subNavSep">:</span>
-        <button type="button" class="subNavAction" id="signOutBtn">Sign Out</button>
-        <span class="subNavSep">:</span>
-        <button type="button" class="subNavAction" id="revBtn">REV <span id="revPill">1.0</span></button>
-        <span class="subNavSep">:</span>
         <button type="button" class="subNavAction" id="backupNowBtn">Backup Now</button>
         <span class="subNavSep">:</span>
         <button type="button" class="subNavAction" id="importBackupBtn">Import Backup</button>
         <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none;" />
         <span class="subNavSep">:</span>
         <button type="button" class="subNavAction subNavActionStrong" id="addMembersBtn">Add Members</button>
+        <span class="subNavSep">:</span>
+        <button type="button" class="subNavAction" id="signOutBtn">Sign Out</button>
+        <span class="subNavSep">:</span>
+        <button type="button" class="subNavAction" id="revBtn">REV <span id="revPill">1.0</span></button>
       </div>
     </div>
   </nav>
@@ -879,21 +885,10 @@
   $("addMemberOverlay").addEventListener("click", (e) => { if(e.target === e.currentTarget) closeAddModal(); });
   $("memberSaveBtn").addEventListener("click", () => saveMember());
   $("memberName").addEventListener("keydown", (e) => { if(e.key === "Enter"){ e.preventDefault(); saveMember(); } });
-  $("signInBtn").addEventListener("click", async () => {
-    const email = prompt("Email:");
-    const pass = prompt("Password:");
-    if(!email || !pass) return;
-    try {
-      await firebase.auth().signInWithEmailAndPassword(email.trim(), pass);
-    } catch(e){
-      alert("Sign-in failed: " + (e && e.message ? e.message : e));
-      console.error(e);
-    }
-  });
   $("signOutBtn").addEventListener("click", async () => {
     try { await firebase.auth().signOut(); } catch(e){}
     try { localStorage.removeItem("planner.forceMember"); } catch(e){}
-    location.reload();
+    location.href = "/";
   });
 
   document.addEventListener("click", (e) => {
@@ -952,7 +947,6 @@
   const isAuthBypassHost = authBypassHosts.has(host);
   if(isAuthBypassHost){
     // Bypass auth gate on approved hosts.
-    try { $("signInBtn").style.display = "none"; } catch(e){}
     try { $("signOutBtn").style.display = "none"; } catch(e){}
     startWatch();
     return;
@@ -962,9 +956,7 @@
       console.log("[ADMIN] auth user:", u ? { uid: u.uid, email: u.email } : null);
       if(u) startWatch();
       else {
-        MEMBERS = [];
-        renderMembers();
-        console.warn("[ADMIN] Not signed in. You must sign in for teamMembers to load.");
+        location.href = "/";
       }
     });
   } else {
