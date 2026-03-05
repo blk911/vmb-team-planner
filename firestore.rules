@@ -1,25 +1,54 @@
+// firestore.rules
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-
-    function isTeam() {
-      return request.auth != null
-        && request.auth.token.email != null
-        && request.auth.token.email in [
-          "blk911@gmail.com",
-          "TEAMMATE1@EMAIL.COM",
-          "TEAMMATE2@EMAIL.COM"
-        ];
+    // --- helpers ---
+    function signedIn() {
+      return request.auth != null;
     }
 
+    function email() {
+      return request.auth != null && request.auth.token.email != null
+        ? request.auth.token.email
+        : null;
+    }
+
+    // Team allowlist (bootstrap admins)
+    function isTeam() {
+      return signedIn() && (
+        isMemberByUid() ||
+        email() in [
+        "blk911@gmail.com",
+        "admin@venmebaby.com",
+        "taylormanaya@gmail.com",
+        "oreo12798@gmail.com"
+      ]);
+    }
+
+    function isMemberByUid() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/teamMembers/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data.active == true;
+    }
+
+    // Default deny (VERY IMPORTANT)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Collections your app uses
+    match /teamMembers/{memberId} {
+      allow read, write: if isTeam();
+    }
 
     match /plannerDays/{dayId} {
       allow read, write: if isTeam();
     }
-    // Allow read/write so Planner and Admin can add/list members without sign-in. Use isTeam() when you enable Firebase Auth.
-    match /teamMembers/{memberId} {
-      allow read, write: if true;
-    }
+
+    // OPTIONAL: if you later add a "members" collection, uncomment:
+    // match /members/{memberId} {
+    //   allow read, write: if isTeam();
+    // }
   }
 }

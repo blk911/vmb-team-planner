@@ -14,5 +14,8 @@
   "devDependencies": {
     "firebase-tools": "^15.5.1",
     "serve": "^14.2.5"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.7.0"
   }
 }

@@ -650,40 +650,67 @@
     if(overlay){ overlay.classList.remove("show"); overlay.setAttribute("aria-hidden", "true"); }
   }
 
+  async function createMemberViaAdminApi(payload){
+    if(!auth || !auth.currentUser){
+      throw new Error("Admin sign-in required.");
+    }
+    const idToken = await auth.currentUser.getIdToken();
+    const res = await fetch("/api/admin/create-member", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + idToken
+      },
+      body: JSON.stringify(payload)
+    });
+    let body = {};
+    try { body = await res.json(); } catch(e){}
+    if(!res.ok || !body || body.ok !== true){
+      const msg = body && body.error ? body.error : ("HTTP " + res.status);
+      throw new Error(msg);
+    }
+    return body;
+  }
+
   async function saveMember(){
     const name = ($("memberName").value || "").trim();
     const phone = ($("memberPhone").value || "").trim();
     const email = ($("memberEmail").value || "").trim();
     const role = ($("memberRole").value || "member").trim();
     if(!name){ alert("Name required"); return; }
-    if(!db){ alert("Firebase not loaded. Check console (F12)."); return; }
+    if(!email){ alert("Email required"); return; }
+    if(!auth || !auth.currentUser){ alert("Sign in first, then add members."); return; }
 
-    const docId = slug(name);
-    if(!docId){ alert("Invalid name"); return; }
-    const ts = serverTimestamp();
-    const createdAt = ts !== null ? ts : nowStamp();
-    const updatedAt = ts !== null ? ts : nowStamp();
+    const saveBtn = $("memberSaveBtn");
+    if(saveBtn){
+      saveBtn.disabled = true;
+      saveBtn.textContent = "SAVING...";
+    }
 
     try {
-      const membersRef = membersCollection();
-      if(!membersRef){ throw new Error("members collection unavailable"); }
-      await membersRef.doc(docId).set({
-        id: docId,
+      const apiResult = await createMemberViaAdminApi({
         name,
         phone: phone || null,
-        email: email || null,
+        email,
         role: role || "member",
-        active: true,
-        createdAt: createdAt,
-        updatedAt: updatedAt
-      }, { merge: true });
+        forcePasswordReset: true
+      });
+      const createdText = apiResult.createdAuthUser
+        ? ("Temp password: " + (apiResult.tempPassword || "(not returned)"))
+        : "Auth account already existed for this email.";
+      alert("Member saved.\n\n" + createdText + (apiResult.passwordResetLink ? "\nPassword reset link generated." : ""));
       // "Add Member" always provisions a blank workspace for non-JSW members.
-      clearMemberWorkspace(docId);
+      clearMemberWorkspace(String(apiResult.workspaceId || slug(name)));
       closeAddModal();
       // list updates via onSnapshot
     } catch (err) {
       console.error("Admin saveMember error:", err);
       alert("Save failed: " + (err && err.message ? err.message : String(err)));
+    } finally {
+      if(saveBtn){
+        saveBtn.disabled = false;
+        saveBtn.textContent = "SAVE";
+      }
     }
   }
 
@@ -701,7 +728,7 @@
     list.innerHTML = "";
     for(const m of MEMBERS){
       const id = docIdFor(m);
-      const workspaceMemberId = slug(m.name || id);
+      const workspaceMemberId = slug(m.workspaceId || m.name || id);
       const workspaceHref = workspaceMemberId === "jsw" ? "/index.html" : ("/index.html?member=" + encodeURIComponent(workspaceMemberId));
       const meta = [m.phone || "", m.email || ""].filter(Boolean).join(" • ");
       const addDate = formatAddDate(m);
@@ -876,8 +903,7 @@
   const authBypassHosts = new Set([
     "localhost",
     "127.0.0.1",
-    "::1",
-    "vmb-team-planner.vercel.app"
+    "::1"
   ]);
   const isAuthBypassHost = authBypassHosts.has(host);
   if(isAuthBypassHost){
