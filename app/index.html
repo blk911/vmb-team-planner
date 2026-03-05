@@ -3781,10 +3781,10 @@
     const signOutBtn = document.getElementById("authSignOutBtn");
     const errEl = document.getElementById("authErr");
 
-    const TEAM_EMAILS = new Set([
+    const ADMIN_EMAILS = new Set([
       "blk911@gmail.com",
       "admin@venmebaby.com",
-      "taylorpackard@icloud.com",
+      "taylormanaya@gmail.com",
       "oreo12798@gmail.com",
     ]);
 
@@ -3804,8 +3804,7 @@
     const authBypassHosts = new Set([
       "localhost",
       "127.0.0.1",
-      "::1",
-      "vmb-team-planner.vercel.app"
+      "::1"
     ]);
     const isAuthBypassHost = authBypassHosts.has(host);
     if(isAuthBypassHost){
@@ -3829,7 +3828,6 @@
         const email = (emailEl?.value || "").trim().toLowerCase();
         const pass = (passEl?.value || "").trim();
         if(!email || !pass) return showGate("Enter email + password.");
-        if(!TEAM_EMAILS.has(email)) return showGate("Not authorized for this planner.");
         await auth.signInWithEmailAndPassword(email, pass);
       }catch(e){
         console.error("[auth] signIn failed", e);
@@ -3837,21 +3835,7 @@
       }
     });
 
-    createBtn && createBtn.addEventListener("click", async () => {
-      try{
-        const email = prompt("New user email:");
-        const password = prompt("Temporary password (min 6 chars):");
-
-        if(!email || !password) return;
-        if(password.length < 6) return alert("Password too short.");
-
-        await auth.createUserWithEmailAndPassword(email.trim(), password.trim());
-        alert("User created successfully.");
-      }catch(e){
-        console.error(e);
-        alert(e.message);
-      }
-    });
+    if(createBtn) createBtn.style.display = "none";
 
     passEl?.addEventListener("keydown", (e) => {
       if(e.key === "Enter"){
@@ -3864,7 +3848,7 @@
       try { await auth.signOut(); } catch(e){ console.error(e); }
     });
 
-    auth.onAuthStateChanged((user) => {
+    auth.onAuthStateChanged(async (user) => {
       if(!user){
         if(signOutBtn) signOutBtn.style.display = "none";
         if(createBtn) createBtn.style.display = "none";
@@ -3873,20 +3857,48 @@
       }
 
       const email = String(user.email || "").toLowerCase();
-      if(!TEAM_EMAILS.has(email)){
-        if(signOutBtn) signOutBtn.style.display = "inline-flex";
-        if(createBtn) createBtn.style.display = "none";
-        showGate("Signed in, but not authorized for this planner.");
+      if(signOutBtn) signOutBtn.style.display = "inline-flex";
+
+      // Bootstrap admins can always access planner even if their member doc is missing.
+      if(ADMIN_EMAILS.has(email)){
+        try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
+        createBtn && (createBtn.style.display = "none");
+        hideGate();
+        bootApp();
         return;
       }
 
-      if(signOutBtn) signOutBtn.style.display = "inline-flex";
-      // Only ADMIN can create users
-      if(user.email === "admin@venmebaby.com"){
-        createBtn && (createBtn.style.display = "inline-flex");
-      }else{
-        createBtn && (createBtn.style.display = "none");
+      const db = window.firebaseDb || null;
+      if(!db){
+        showGate("Planner membership lookup unavailable.");
+        return;
       }
+
+      try{
+        const memberSnap = await db.collection("teamMembers").doc(String(user.uid)).get();
+        if(!memberSnap.exists){
+          showGate("Signed in, but no active member profile found.");
+          return;
+        }
+        const member = memberSnap.data() || {};
+        if(member.active === false){
+          showGate("Your member profile is inactive.");
+          return;
+        }
+
+        const workspaceId = String(member.workspaceId || member.id || user.uid || "").trim().toLowerCase();
+        if(workspaceId && workspaceId !== "jsw"){
+          try { localStorage.setItem(FORCE_MEMBER_KEY, workspaceId); } catch(e){}
+        } else {
+          try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
+        }
+      } catch(err){
+        console.error("[auth] member profile lookup failed", err);
+        showGate("Could not verify member access.");
+        return;
+      }
+
+      createBtn && (createBtn.style.display = "none");
       hideGate();
       bootApp();
     }, (err) => {
