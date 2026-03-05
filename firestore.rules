@@ -19,10 +19,7 @@ service cloud.firestore {
       return signedIn() && (
         isMemberByUid() ||
         email() in [
-        "blk911@gmail.com",
-        "admin@venmebaby.com",
-        "taylormanaya@gmail.com",
-        "oreo12798@gmail.com"
+        "admin@venmebaby.com"
       ]);
     }
 
@@ -39,7 +36,8 @@ service cloud.firestore {
 
     // Collections your app uses
     match /teamMembers/{memberId} {
-      allow read, write: if isTeam();
+      allow read: if isTeam();
+      allow write: if email() == "admin@venmebaby.com";
     }
 
     match /plannerDays/{dayId} {

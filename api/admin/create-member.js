@@ -74,10 +74,7 @@ function getAllowedAdminEmails() {
   if (fromEnv.length) return new Set(fromEnv);
 
   return new Set([
-    "blk911@gmail.com",
     "admin@venmebaby.com",
-    "taylormanaya@gmail.com",
-    "oreo12798@gmail.com",
   ]);
 }
 

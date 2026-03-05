@@ -955,7 +955,14 @@
   if(auth && typeof auth.onAuthStateChanged === "function"){
     auth.onAuthStateChanged((u) => {
       console.log("[ADMIN] auth user:", u ? { uid: u.uid, email: u.email } : null);
-      if(u) startWatch();
+      if(u){
+        const email = String(u.email || "").trim().toLowerCase();
+        if(email !== "admin@venmebaby.com"){
+          location.href = "/";
+          return;
+        }
+        startWatch();
+      }
       else {
         location.href = "/";
       }
