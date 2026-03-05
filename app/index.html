@@ -1210,6 +1210,7 @@
 
       <div class="authRow authRowButtons">
         <button class="btn good" id="authSignInBtn">Sign in</button>
+        <button class="btn secondary" id="authResetBtn">Clear Session</button>
         <button class="btn secondary" id="authCreateBtn" style="display:none;">Create User</button>
         <button class="btn secondary" id="authSignOutBtn" style="display:none;">Sign out</button>
       </div>
@@ -3785,6 +3786,7 @@
     const emailEl = document.getElementById("authEmail");
     const passEl = document.getElementById("authPass");
     const signInBtn = document.getElementById("authSignInBtn");
+    const resetBtn = document.getElementById("authResetBtn");
     const createBtn = document.getElementById("authCreateBtn");
     const signOutBtn = document.getElementById("authSignOutBtn");
     const errEl = document.getElementById("authErr");
@@ -3841,6 +3843,14 @@
         console.error("[auth] signIn failed", e);
         showGate((e && e.message) ? e.message : "Sign-in failed.");
       }
+    });
+
+    resetBtn && resetBtn.addEventListener("click", async () => {
+      try { await auth.signOut(); } catch(e){ console.error("[auth] reset signOut failed", e); }
+      try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
+      if(emailEl) emailEl.value = "";
+      if(passEl) passEl.value = "";
+      showGate("Session cleared. Sign in again.");
     });
 
     if(createBtn) createBtn.style.display = "none";
