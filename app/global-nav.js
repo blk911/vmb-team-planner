@@ -2,7 +2,7 @@
   const DEFAULT_LINKS = [
     { id: "team", label: "TEAM", href: "https://vmb-team-planner.vercel.app/" },
     { id: "marketing", label: "MARKETING", href: "https://vmb-mkt.vercel.app/owner-deck" },
-    { id: "decksfaq", label: "DECKS/FAQ", href: "https://vmb-mkt.vercel.app/dashboard/targets" }
+    { id: "datastore", label: "DATA STORE", href: "https://vmb-mkt.vercel.app/dashboard/targets" }
   ];
 
   function normalizeUrl(url){

@@ -61,28 +61,64 @@
       backdrop-filter: blur(8px);
     }
 
-    /* Admin top nav — simple: date + ADD MEMBERS */
+    /* Admin secondary nav (mirrors marketing sub-nav style) */
     .adminNav{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 14px 24px;
+      position: sticky;
+      top: 42px;
+      z-index: 1100;
+      padding: 10px 14px;
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(135deg, rgba(15,23,42,0.04) 0%, rgba(37,99,235,0.08) 100%);
+      background: #fff;
+    }
+    .adminNavInner{
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 14px;
     }
     .adminNavDate{
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
       font-family: var(--mono);
+      white-space: nowrap;
     }
     .adminNavActions{
       display: flex;
       align-items: center;
+      justify-content: flex-start;
       gap: 10px;
+      flex-wrap: wrap;
     }
     .adminNavActions a{ text-decoration: none; }
+    .subNavAction{
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .subNavAction:hover{ color: #0f172a; }
+    .subNavActionStrong{
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(22,163,74,0.24);
+      background: rgba(22,163,74,0.10);
+      color: #166534;
+      font-weight: 700;
+    }
+    .subNavSep{
+      color: #cbd5e1;
+      font-size: 11px;
+      user-select: none;
+    }
     .globalTopLinks{
       display:flex;
       align-items:center;
@@ -338,16 +374,24 @@
 
   <!-- Admin top nav: today's date + ADD MEMBERS -->
   <nav class="adminNav">
-    <span class="adminNavDate" id="adminNavDate">—</span>
-    <div class="adminNavActions">
-      <a href="index.html" class="btn secondary">← Back to Planner</a>
-      <button type="button" class="btn" id="signInBtn">SIGN IN</button>
-      <button type="button" class="btn" id="signOutBtn">SIGN OUT</button>
-      <button type="button" class="btn secondary" id="revBtn">REV <span id="revPill">1.0</span></button>
-      <button type="button" class="btn secondary" id="backupNowBtn">BACKUP NOW</button>
-      <button type="button" class="btn secondary" id="importBackupBtn">IMPORT BACKUP</button>
-      <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none;" />
-      <button type="button" class="btn good" id="addMembersBtn">ADD MEMBERS</button>
+    <div class="adminNavInner">
+      <span class="adminNavDate" id="adminNavDate">—</span>
+      <div class="adminNavActions">
+        <a href="index.html" class="subNavAction">Back to Planner</a>
+        <span class="subNavSep">:</span>
+        <button type="button" class="subNavAction" id="signInBtn">Sign In</button>
+        <span class="subNavSep">:</span>
+        <button type="button" class="subNavAction" id="signOutBtn">Sign Out</button>
+        <span class="subNavSep">:</span>
+        <button type="button" class="subNavAction" id="revBtn">REV <span id="revPill">1.0</span></button>
+        <span class="subNavSep">:</span>
+        <button type="button" class="subNavAction" id="backupNowBtn">Backup Now</button>
+        <span class="subNavSep">:</span>
+        <button type="button" class="subNavAction" id="importBackupBtn">Import Backup</button>
+        <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none;" />
+        <span class="subNavSep">:</span>
+        <button type="button" class="subNavAction subNavActionStrong" id="addMembersBtn">Add Members</button>
+      </div>
     </div>
   </nav>
 
