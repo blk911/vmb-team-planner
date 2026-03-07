@@ -425,7 +425,7 @@
     <div class="adminNavInner">
       <span class="adminNavDate" id="adminNavDate">—</span>
       <div class="adminNavActions">
-        <a href="index.html" class="subNavAction">Back to Planner</a>
+        <a href="/" class="subNavAction">Back to Planner</a>
         <span class="subNavSep">:</span>
         <button type="button" class="subNavAction" id="backupNowBtn">Backup Now</button>
         <span class="subNavSep">:</span>
@@ -1287,7 +1287,7 @@
     try {
       const result = await importBackupFromFile(file);
       alert("Imported backup snapshot (" + result.applied + " keys). Reloading...");
-      location.href = "/index.html";
+      location.href = "/";
     } catch(err){
       console.error("Import backup failed:", err);
       alert("Import failed: " + (err && err.message ? err.message : String(err)));

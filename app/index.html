@@ -1064,7 +1064,7 @@
       <button class="btn secondary" id="teamBtn" title="Add / edit team">Team</button>
       <button class="btn secondary" id="navFocusBtn">Focus</button>
       <button class="btn secondary" id="plannerSignOutBtn" style="display:none;">Sign Out</button>
-      <a href="admin.html" class="btn secondary" id="adminLink">Admin</a>
+      <a href="/admin" class="btn secondary" id="adminLink">Admin</a>
     </div>
   </div>
 
@@ -3848,8 +3848,7 @@
       if(emailEl) emailEl.value = "";
       if(passEl) passEl.value = "";
       if(options.reload !== false){
-        const next = location.pathname || "/";
-        location.replace(next);
+        location.replace("/");
         return;
       }
       showGate(options.message || "Session cleared. Sign in again.");
