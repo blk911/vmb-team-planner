@@ -1064,6 +1064,7 @@
       <button class="btn secondary" id="teamBtn" title="Add / edit team">Team</button>
       <button class="btn secondary" id="navFocusBtn">Focus</button>
       <a href="admin.html" class="btn secondary" id="adminLink">Admin</a>
+      <button class="btn secondary" id="plannerSignOutBtn" style="display:none;">Sign Out</button>
     </div>
   </div>
 
@@ -3815,6 +3816,7 @@
     const resetBtn = document.getElementById("authResetBtn");
     const createBtn = document.getElementById("authCreateBtn");
     const signOutBtn = document.getElementById("authSignOutBtn");
+    const plannerSignOutBtn = document.getElementById("plannerSignOutBtn");
     const errEl = document.getElementById("authErr");
 
     function showGate(msg){
@@ -3827,6 +3829,19 @@
     function hideGate(){
       if(gate) gate.style.display = "none";
       if(errEl){ errEl.style.display = "none"; errEl.textContent = ""; }
+    }
+    async function clearPlannerSession(opts){
+      const options = opts || {};
+      try { await authApi.signOut(); } catch(e){ console.error("[auth] signOut failed", e); }
+      try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
+      if(emailEl) emailEl.value = "";
+      if(passEl) passEl.value = "";
+      if(options.reload !== false){
+        const next = location.pathname || "/";
+        location.replace(next);
+        return;
+      }
+      showGate(options.message || "Session cleared. Sign in again.");
     }
 
     if(!authApi){
@@ -3855,11 +3870,7 @@
     });
 
     resetBtn && resetBtn.addEventListener("click", async () => {
-      try { await authApi.signOut(); } catch(e){ console.error("[auth] reset signOut failed", e); }
-      try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
-      if(emailEl) emailEl.value = "";
-      if(passEl) passEl.value = "";
-      showGate("Session cleared. Sign in again.");
+      await clearPlannerSession({ reload: true });
     });
 
     if(createBtn) createBtn.style.display = "none";
@@ -3872,19 +3883,24 @@
     });
 
     signOutBtn && signOutBtn.addEventListener("click", async () => {
-      try { await authApi.signOut(); } catch(e){ console.error(e); }
+      await clearPlannerSession({ reload: true });
+    });
+    plannerSignOutBtn && plannerSignOutBtn.addEventListener("click", async () => {
+      await clearPlannerSession({ reload: true });
     });
 
     authApi.onAccessChange({
       onResolved: async (access) => {
       if(!access || !access.ok){
         if(signOutBtn) signOutBtn.style.display = "none";
+        if(plannerSignOutBtn) plannerSignOutBtn.style.display = "none";
         if(createBtn) createBtn.style.display = "none";
         showGate(access && access.message ? access.message : "");
         return;
       }
 
       if(signOutBtn) signOutBtn.style.display = "inline-flex";
+      if(plannerSignOutBtn) plannerSignOutBtn.style.display = "inline-flex";
 
       if(access.admin){
         try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
@@ -3914,6 +3930,7 @@
       console.error("[auth] access listener failed", err);
       showGate("Auth listener failed.");
       if(signOutBtn) signOutBtn.style.display = "none";
+      if(plannerSignOutBtn) plannerSignOutBtn.style.display = "none";
     }});
 
     showGate();

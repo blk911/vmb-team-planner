@@ -75,6 +75,7 @@ function getAllowedAdminEmails() {
 
   return new Set([
     "admin@venmebaby.com",
+    "blk911@gmail.com",
   ]);
 }
 

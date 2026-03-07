@@ -15,6 +15,7 @@
       .map(normalizeEmail)
       .filter(Boolean);
     if(!emails.includes("admin@venmebaby.com")) emails.push("admin@venmebaby.com");
+    if(!emails.includes("blk911@gmail.com")) emails.push("blk911@gmail.com");
     return new Set(emails);
   }
 
