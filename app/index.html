@@ -1246,17 +1246,6 @@
 
 <script>
 (function(){
-  const authApi = window.VMBAuth || null;
-  const initialAuth = authApi ? authApi.getAuth() : null;
-  const initialUser = initialAuth && initialAuth.currentUser ? initialAuth.currentUser : null;
-  const initialEmail = authApi && initialUser ? authApi.normalizeEmail(initialUser.email) : "";
-  if(initialEmail && authApi && authApi.isAdminEmail(initialEmail)){
-    try { authApi.clearPlannerSessionState(); } catch(_err) {}
-    if(!location.pathname.endsWith("/admin") && !location.pathname.endsWith("/admin.html")){
-      location.replace("/admin");
-      return;
-    }
-  }
   const urlParams = new URLSearchParams(location.search);
   const FORCE_MEMBER_KEY = "planner.forceMember";
   const memberFromUrl = ((urlParams.get("member") || urlParams.get("id") || "").trim().toLowerCase()) || "";
