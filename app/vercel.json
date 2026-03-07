@@ -1,7 +1,7 @@
 {
   "redirects": [
-    { "source": "/admin/:path*", "destination": "/admin", "permanent": false },
-    { "source": "/admin.html/:path*", "destination": "/admin", "permanent": false }
+    { "source": "/admin/(.*)", "destination": "/admin", "permanent": false },
+    { "source": "/admin.html/(.*)", "destination": "/admin", "permanent": false }
   ],
   "rewrites": [
     { "source": "/auth.js", "destination": "/auth.js" },
