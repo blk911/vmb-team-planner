@@ -543,8 +543,13 @@
 (function(){
   const path = String(location.pathname || "");
   if(path !== "/admin" && path !== "/admin.html" && (path.startsWith("/admin/") || path.startsWith("/admin.html/"))){
-    location.replace("/admin");
+    location.replace(location.origin + "/admin");
     return;
+  }
+  if(path === "/admin.html"){
+    history.replaceState(null, "", location.origin + "/admin");
+  } else if(path === "/admin"){
+    history.replaceState(null, "", location.origin + "/admin");
   }
   const $ = (id) => document.getElementById(id);
   const db = window.firebaseDb;
@@ -1373,11 +1378,14 @@
         email: access.email || null
       } : null);
       if(!access || !access.ok){
-        location.href = "/";
+        location.href = location.origin + "/";
         return;
       }
       if(access.bypass){
         try { $("signOutBtn").style.display = "none"; } catch(e){}
+      }
+      if(location.pathname !== "/admin"){
+        history.replaceState(null, "", location.origin + "/admin");
       }
       startWatch();
     },
