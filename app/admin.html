@@ -274,6 +274,32 @@
     }
     .memberRowActions{ display: flex; gap: 8px; align-items: center; }
     .memberRowActions a{ text-decoration: none; }
+    .resetIntro{
+      margin: 0 0 14px 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .resetActions{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom: 14px;
+    }
+    .resetReport{
+      margin:0;
+      padding:14px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:#0f172a;
+      color:#e2e8f0;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 220px;
+    }
 
     /* Project dropdown icon + list */
     .memberProjWrap{
@@ -432,6 +458,25 @@
           <div class="memberList" id="memberListDiv"></div>
         </div>
       </div>
+
+      <div class="panel">
+        <div class="panelHeader">
+          <h2>Canonical Reset</h2>
+          <span class="pill" id="canonicalResetPill">idle</span>
+        </div>
+        <div class="panelBody">
+          <p class="resetIntro">
+            Protect canonical profiles (`admin`, `jsw`, `katie`, `taylor`), preview duplicate member docs, and remap
+            known legacy member ids inside the planner data stored in this browser before deleting safe duplicate
+            Firestore docs.
+          </p>
+          <div class="resetActions">
+            <button type="button" class="btn secondary" id="canonicalPreviewBtn">PREVIEW RESET</button>
+            <button type="button" class="btn good" id="canonicalApplyBtn">APPLY SAFE RESET</button>
+          </div>
+          <pre class="resetReport" id="canonicalResetReport">No canonical reset preview yet.</pre>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -496,6 +541,11 @@
 
 <script>
 (function(){
+  const path = String(location.pathname || "");
+  if(path !== "/admin" && path !== "/admin.html" && (path.startsWith("/admin/") || path.startsWith("/admin.html/"))){
+    location.replace("/admin");
+    return;
+  }
   const $ = (id) => document.getElementById(id);
   const db = window.firebaseDb;
   const authApi = window.VMBAuth || null;
@@ -503,6 +553,53 @@
   const TEAM_ID = "vmb-team";
   const MEMBER_INIT_KEY = "daily_planner.member_init.v1";
   const REV_META_KEY = "vmb.revision.meta";
+  const CANONICAL_MEMBERS = [
+    {
+      id: "admin",
+      name: "ADMIN",
+      email: "admin@venmebaby.com",
+      phone: "0000000000",
+      role: "admin",
+      active: true,
+      aliases: ["admin", "admin@venmebaby.com"]
+    },
+    {
+      id: "jsw",
+      name: "JSW",
+      email: "blk911@gmail.com",
+      phone: "5125551212",
+      role: "admin",
+      active: true,
+      aliases: ["jsw", "blk911@gmail.com"]
+    },
+    {
+      id: "katie",
+      name: "Katie",
+      email: "oreo12798@gmail.com",
+      phone: "3033631448",
+      role: "member",
+      active: true,
+      aliases: ["katie", "oreo12798@gmail.com", "mem_c28a3b032e322_19c5283de53"]
+    },
+    {
+      id: "taylor",
+      name: "Taylor",
+      email: "taylormanaya@gmail.com",
+      phone: "9706230871",
+      role: "member",
+      active: true,
+      aliases: ["taylor", "taylormanaya@gmail.com", "mem_28ee1e04347638_19c5283ae59"]
+    }
+  ];
+  const CANONICAL_BY_ID = new Map(CANONICAL_MEMBERS.map((m) => [m.id, m]));
+  const CANONICAL_ALIAS_TO_ID = new Map();
+  for(const m of CANONICAL_MEMBERS){
+    const values = [m.id, m.email, m.name, ...(Array.isArray(m.aliases) ? m.aliases : [])];
+    for(const value of values){
+      const norm = String(value || "").trim().toLowerCase();
+      if(norm) CANONICAL_ALIAS_TO_ID.set(norm, m.id);
+    }
+  }
   let MEMBERS = [];
   let MEMBER_PROJECTS = {}; // memberId -> [ project names ] (placeholder; could be from Firestore later)
   function membersCollection(){
@@ -692,6 +789,29 @@
   function slug(name){
     return (name || "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "member";
   }
+  function normalizeId(value){
+    return String(value || "").trim().toLowerCase();
+  }
+  function canonicalIdFromValue(value){
+    const norm = normalizeId(value);
+    return norm ? (CANONICAL_ALIAS_TO_ID.get(norm) || null) : null;
+  }
+  function canonicalIdForMemberDoc(m){
+    const candidates = [
+      m && m.id,
+      m && m.uid,
+      m && m.workspaceId,
+      m && m.email,
+      m && m.name,
+      m && m.legacyMemId,
+      m && m.LegacyMemId
+    ];
+    for(const value of candidates){
+      const canonicalId = canonicalIdFromValue(value);
+      if(canonicalId) return canonicalId;
+    }
+    return null;
+  }
   function docIdFor(m){
     return m.id || slug(m.name) || ("m_" + Date.now());
   }
@@ -777,6 +897,270 @@
         saveBtn.disabled = false;
         saveBtn.textContent = "SAVE";
       }
+    }
+  }
+
+  function setCanonicalResetStatus(text){
+    const el = $("canonicalResetPill");
+    if(el) el.textContent = text;
+  }
+  function setCanonicalResetReport(text){
+    const el = $("canonicalResetReport");
+    if(el) el.textContent = text;
+  }
+  function remapKnownId(value, remapMap, stats, path){
+    const norm = normalizeId(value);
+    const next = norm ? remapMap.get(norm) : null;
+    if(!next || next === norm) return value;
+    stats.changedPaths.push(path + ": " + norm + " -> " + next);
+    return next;
+  }
+  function cloneJson(value){
+    try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
+  }
+  function remapPlannerValue(value, remapMap, stats, path){
+    if(Array.isArray(value)) return value.map((item, idx) => remapPlannerValue(item, remapMap, stats, path + "[" + idx + "]"));
+    if(!value || typeof value !== "object") return value;
+    const out = Array.isArray(value) ? [] : {};
+    for(const [key, raw] of Object.entries(value)){
+      let next = raw;
+      const fieldPath = path ? (path + "." + key) : key;
+      if(["workspaceId", "ownerWorkspaceId", "teamMemberId", "memberId", "legacyMemId", "LegacyMemId"].includes(key) && typeof raw === "string"){
+        next = remapKnownId(raw, remapMap, stats, fieldPath);
+      } else if(["teamMemberIds", "_sharedWithIds"].includes(key) && Array.isArray(raw)){
+        next = raw.map((item, idx) => typeof item === "string" ? remapKnownId(item, remapMap, stats, fieldPath + "[" + idx + "]") : item);
+      } else {
+        next = remapPlannerValue(raw, remapMap, stats, fieldPath);
+      }
+      out[key] = next;
+    }
+    return out;
+  }
+  function previewLocalStorageRemap(remapMap){
+    const summary = [];
+    for(let i = 0; i < localStorage.length; i++){
+      const key = localStorage.key(i);
+      if(!key) continue;
+      if(!(key.startsWith("daily_planner.") || key === "vmb_team" || key === "planner.forceMember" || key === "planner.ui.v1")) continue;
+      const raw = localStorage.getItem(key);
+      let parsed;
+      try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = raw; }
+      const stats = { changedPaths: [] };
+      const targetValue = key === "vmb_team" && Array.isArray(parsed)
+        ? parsed.map((entry, idx) => {
+            const copy = { ...(entry || {}) };
+            if(typeof copy.id === "string") copy.id = remapKnownId(copy.id, remapMap, stats, key + "[" + idx + "].id");
+            if(typeof copy.workspaceId === "string") copy.workspaceId = remapKnownId(copy.workspaceId, remapMap, stats, key + "[" + idx + "].workspaceId");
+            if(typeof copy.legacyMemId === "string") copy.legacyMemId = remapKnownId(copy.legacyMemId, remapMap, stats, key + "[" + idx + "].legacyMemId");
+            if(typeof copy.LegacyMemId === "string") copy.LegacyMemId = remapKnownId(copy.LegacyMemId, remapMap, stats, key + "[" + idx + "].LegacyMemId");
+            return copy;
+          })
+        : remapPlannerValue(parsed, remapMap, stats, key);
+      const suffix = key.startsWith("daily_planner.v1.") ? key.slice("daily_planner.v1.".length) : null;
+      const keyRemap = suffix ? remapMap.get(normalizeId(suffix)) : null;
+      summary.push({
+        key,
+        keyRemap: keyRemap && keyRemap !== normalizeId(suffix) ? ("daily_planner.v1." + keyRemap) : null,
+        changedPaths: stats.changedPaths,
+        parsed: targetValue
+      });
+    }
+    return summary;
+  }
+  function buildCanonicalResetPlan(){
+    const docsByCanonical = new Map(CANONICAL_MEMBERS.map((m) => [m.id, []]));
+    const unknownDocs = [];
+    const deleteDocIds = [];
+    const heldDocIds = [];
+    const remapMap = new Map();
+    for(const canonical of CANONICAL_MEMBERS){
+      remapMap.set(canonical.id, canonical.id);
+      remapMap.set(normalizeId(canonical.email), canonical.id);
+      remapMap.set(normalizeId(canonical.name), canonical.id);
+      for(const alias of canonical.aliases || []) remapMap.set(normalizeId(alias), canonical.id);
+    }
+    for(const member of MEMBERS){
+      const docId = docIdFor(member);
+      const canonicalId = canonicalIdForMemberDoc(member);
+      if(!canonicalId){
+        unknownDocs.push({ id: docId, name: member.name || "", email: member.email || "", workspaceId: member.workspaceId || "" });
+        continue;
+      }
+      docsByCanonical.get(canonicalId).push(member);
+      remapMap.set(normalizeId(docId), canonicalId);
+      if(member.workspaceId) remapMap.set(normalizeId(member.workspaceId), canonicalId);
+      if(member.uid) remapMap.set(normalizeId(member.uid), canonicalId);
+      if(member.legacyMemId) remapMap.set(normalizeId(member.legacyMemId), canonicalId);
+      if(member.LegacyMemId) remapMap.set(normalizeId(member.LegacyMemId), canonicalId);
+      if(docId !== canonicalId){
+        const authBound = member.uid && normalizeId(member.uid) === normalizeId(docId);
+        if(authBound) heldDocIds.push(docId);
+        else deleteDocIds.push(docId);
+      }
+    }
+    const localPreview = previewLocalStorageRemap(remapMap);
+    return {
+      docsByCanonical,
+      unknownDocs,
+      deleteDocIds,
+      heldDocIds,
+      remapMap,
+      localPreview
+    };
+  }
+  function formatCanonicalResetPlan(plan){
+    const lines = [];
+    lines.push("Canonical profiles:");
+    for(const canonical of CANONICAL_MEMBERS){
+      lines.push("- " + canonical.id + " => " + canonical.name + " <" + canonical.email + ">");
+    }
+    lines.push("");
+    lines.push("Firestore member docs:");
+    for(const canonical of CANONICAL_MEMBERS){
+      const docs = plan.docsByCanonical.get(canonical.id) || [];
+      lines.push("- " + canonical.id + ": " + (docs.length ? docs.map((doc) => doc.id + (doc.workspaceId ? " [" + doc.workspaceId + "]" : "")).join(", ") : "missing"));
+    }
+    lines.push("");
+    lines.push("Duplicate docs to delete after remap:");
+    if(plan.deleteDocIds.length) for(const id of plan.deleteDocIds) lines.push("- teamMembers/" + id);
+    else lines.push("- none");
+    lines.push("");
+    lines.push("Auth-bound docs held for manual review:");
+    if(plan.heldDocIds.length) for(const id of plan.heldDocIds) lines.push("- teamMembers/" + id);
+    else lines.push("- none");
+    lines.push("");
+    lines.push("Unknown member docs left untouched:");
+    if(plan.unknownDocs.length){
+      for(const doc of plan.unknownDocs){
+        lines.push("- " + doc.id + " | " + (doc.name || "—") + " | " + (doc.email || "—") + " | workspace " + (doc.workspaceId || "—"));
+      }
+    } else {
+      lines.push("- none");
+    }
+    lines.push("");
+    lines.push("Planner/localStorage reference scan:");
+    const touched = plan.localPreview.filter((entry) => entry.changedPaths.length || entry.keyRemap);
+    if(touched.length){
+      for(const entry of touched){
+        lines.push("- " + entry.key + (entry.keyRemap ? " => " + entry.keyRemap : ""));
+        for(const change of entry.changedPaths.slice(0, 8)) lines.push("  " + change);
+        if(entry.changedPaths.length > 8) lines.push("  ... +" + (entry.changedPaths.length - 8) + " more changes");
+      }
+    } else {
+      lines.push("- no legacy member references detected in current browser storage");
+    }
+    lines.push("");
+    lines.push("Reference fields covered:");
+    lines.push("- planner.forceMember");
+    lines.push("- daily_planner.v1* key suffixes for member workspaces");
+    lines.push("- workspaceId");
+    lines.push("- ownerWorkspaceId");
+    lines.push("- memberId / teamMemberId");
+    lines.push("- teamMemberIds");
+    lines.push("- _sharedWithIds");
+    lines.push("- legacyMemId / LegacyMemId");
+    return lines.join("\n");
+  }
+  function mergeIntoCanonicalWorkspace(targetKey, sourceValue){
+    const existingRaw = localStorage.getItem(targetKey);
+    if(!existingRaw){
+      localStorage.setItem(targetKey, JSON.stringify(sourceValue));
+      return "copied";
+    }
+    let target;
+    try { target = JSON.parse(existingRaw || "{}"); } catch { target = {}; }
+    const source = sourceValue && typeof sourceValue === "object" ? sourceValue : {};
+    let merged = 0;
+    for(const [dayKey, entry] of Object.entries(source)){
+      if(!(dayKey in target)){
+        target[dayKey] = entry;
+        merged++;
+      }
+    }
+    localStorage.setItem(targetKey, JSON.stringify(target));
+    return merged ? ("merged " + merged + " day(s)") : "already present";
+  }
+  async function applyCanonicalReset(){
+    if(!auth || !auth.currentUser) throw new Error("Admin sign-in required.");
+    const membersRef = membersCollection();
+    if(!membersRef) throw new Error("members collection unavailable");
+    const plan = buildCanonicalResetPlan();
+    for(const canonical of CANONICAL_MEMBERS){
+      await membersRef.doc(canonical.id).set({
+        id: canonical.id,
+        uid: canonical.id,
+        workspaceId: canonical.id === "admin" ? "admin" : canonical.id,
+        name: canonical.name,
+        email: canonical.email,
+        phone: canonical.phone || null,
+        role: canonical.role,
+        active: canonical.active !== false,
+        legacyMemId: (canonical.aliases || []).find((alias) => /^mem_/i.test(alias)) || null,
+        LegacyMemId: (canonical.aliases || []).find((alias) => /^mem_/i.test(alias)) || null,
+        updatedAt: serverTimestamp(),
+        updatedBy: auth.currentUser.email || null
+      }, { merge: true });
+    }
+    const touchedKeys = [];
+    for(const entry of plan.localPreview){
+      const raw = localStorage.getItem(entry.key);
+      if(entry.keyRemap && entry.keyRemap !== entry.key && entry.parsed && typeof entry.parsed === "object"){
+        const mergeResult = mergeIntoCanonicalWorkspace(entry.keyRemap, entry.parsed);
+        localStorage.removeItem(entry.key);
+        touchedKeys.push(entry.key + " => " + entry.keyRemap + " (" + mergeResult + ")");
+        continue;
+      }
+      if(entry.changedPaths.length){
+        localStorage.setItem(entry.key, typeof entry.parsed === "string" ? entry.parsed : JSON.stringify(entry.parsed));
+        touchedKeys.push(entry.key + " (" + entry.changedPaths.length + " reference changes)");
+      }
+    }
+    for(const docId of plan.deleteDocIds){
+      if(CANONICAL_BY_ID.has(docId)) continue;
+      await membersRef.doc(docId).delete();
+    }
+    try { localStorage.removeItem("planner.forceMember"); } catch(_err) {}
+      return { deletedDocIds: plan.deleteDocIds, heldDocIds: plan.heldDocIds, touchedKeys, unknownDocs: plan.unknownDocs };
+  }
+  async function previewCanonicalReset(){
+    setCanonicalResetStatus("previewing");
+    try {
+      const plan = buildCanonicalResetPlan();
+      setCanonicalResetReport(formatCanonicalResetPlan(plan));
+      setCanonicalResetStatus("preview ready");
+    } catch(err){
+      setCanonicalResetReport("Preview failed:\n" + (err && err.message ? err.message : String(err)));
+      setCanonicalResetStatus("preview failed");
+    }
+  }
+  async function runCanonicalReset(){
+    setCanonicalResetStatus("applying");
+    try {
+      const plan = buildCanonicalResetPlan();
+      const confirmText = [
+        "Apply canonical reset?",
+        "",
+        "This will:",
+        "- upsert canonical admin/jsw/katie/taylor docs",
+        "- remap known legacy member ids in this browser's planner storage",
+        "- delete duplicate teamMembers docs that safely map to canonical ids",
+        "- hold auth-bound duplicate docs for manual review",
+        "",
+        "Duplicate docs queued for deletion: " + (plan.deleteDocIds.length || 0),
+        "Auth-bound docs held: " + (plan.heldDocIds.length || 0),
+        "Unknown docs left untouched: " + (plan.unknownDocs.length || 0)
+      ].join("\n");
+      if(!confirm(confirmText)){
+        setCanonicalResetStatus("cancelled");
+        return;
+      }
+      const result = await applyCanonicalReset();
+      await previewCanonicalReset();
+      setCanonicalResetReport(($("canonicalResetReport")?.textContent || "") + "\n\nApplied reset.\nDeleted docs: " + (result.deletedDocIds.length ? result.deletedDocIds.join(", ") : "none") + "\nHeld auth-bound docs: " + (result.heldDocIds.length ? result.heldDocIds.join(", ") : "none") + "\nTouched local keys: " + (result.touchedKeys.length ? result.touchedKeys.join(", ") : "none") + "\nUnknown docs left untouched: " + (result.unknownDocs.length || 0));
+      setCanonicalResetStatus("applied");
+    } catch(err){
+      setCanonicalResetReport("Apply failed:\n" + (err && err.message ? err.message : String(err)));
+      setCanonicalResetStatus("apply failed");
     }
   }
 
@@ -885,6 +1269,8 @@
 
   $("addMembersBtn").addEventListener("click", openAddModal);
   $("revBtn").addEventListener("click", openRevModal);
+  $("canonicalPreviewBtn").addEventListener("click", () => previewCanonicalReset());
+  $("canonicalApplyBtn").addEventListener("click", () => runCanonicalReset());
   $("backupNowBtn").addEventListener("click", exportBackupNow);
   $("importBackupBtn").addEventListener("click", () => {
     const picker = $("importBackupFile");
