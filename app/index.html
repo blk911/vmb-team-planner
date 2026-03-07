@@ -1063,8 +1063,8 @@
       <a href="mem-archive.html" class="btn secondary" id="memArchiveLink">MEM ARCHIVE</a>
       <button class="btn secondary" id="teamBtn" title="Add / edit team">Team</button>
       <button class="btn secondary" id="navFocusBtn">Focus</button>
-      <a href="admin.html" class="btn secondary" id="adminLink">Admin</a>
       <button class="btn secondary" id="plannerSignOutBtn" style="display:none;">Sign Out</button>
+      <a href="admin.html" class="btn secondary" id="adminLink">Admin</a>
     </div>
   </div>
 
@@ -1246,6 +1246,17 @@
 
 <script>
 (function(){
+  const authApi = window.VMBAuth || null;
+  const initialAuth = authApi ? authApi.getAuth() : null;
+  const initialUser = initialAuth && initialAuth.currentUser ? initialAuth.currentUser : null;
+  const initialEmail = authApi && initialUser ? authApi.normalizeEmail(initialUser.email) : "";
+  if(initialEmail && authApi && authApi.isAdminEmail(initialEmail)){
+    try { authApi.clearPlannerSessionState(); } catch(_err) {}
+    if(!location.pathname.endsWith("/admin") && !location.pathname.endsWith("/admin.html")){
+      location.replace("/admin");
+      return;
+    }
+  }
   const urlParams = new URLSearchParams(location.search);
   const FORCE_MEMBER_KEY = "planner.forceMember";
   const memberFromUrl = ((urlParams.get("member") || urlParams.get("id") || "").trim().toLowerCase()) || "";
@@ -3833,7 +3844,7 @@
     async function clearPlannerSession(opts){
       const options = opts || {};
       try { await authApi.signOut(); } catch(e){ console.error("[auth] signOut failed", e); }
-      try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
+      try { authApi.clearPlannerSessionState(); } catch(e){ console.error("[auth] clearPlannerSessionState failed", e); }
       if(emailEl) emailEl.value = "";
       if(passEl) passEl.value = "";
       if(options.reload !== false){
@@ -3903,7 +3914,7 @@
       if(plannerSignOutBtn) plannerSignOutBtn.style.display = "inline-flex";
 
       if(access.admin){
-        try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
+        try { authApi.clearPlannerSessionState(); } catch(e){ console.error("[auth] clearPlannerSessionState failed", e); }
         createBtn && (createBtn.style.display = "none");
         // Admin sign-in should land on planner admin tools.
         if(!location.pathname.endsWith("/admin") && !location.pathname.endsWith("/admin.html")){

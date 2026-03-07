@@ -66,6 +66,26 @@
     await auth.signOut();
   }
 
+  function clearPlannerSessionState(){
+    const localKeys = [
+      "planner.forceMember",
+      "planner.ui.v1"
+    ];
+    for(const key of localKeys){
+      try { win.localStorage.removeItem(key); } catch(_err) {}
+    }
+    try {
+      const keys = [];
+      for(let i = 0; i < win.sessionStorage.length; i++){
+        const key = win.sessionStorage.key(i);
+        if(key) keys.push(key);
+      }
+      for(const key of keys){
+        if(/^(planner\.|daily_planner\.|vmb_)/.test(key)) win.sessionStorage.removeItem(key);
+      }
+    } catch(_err) {}
+  }
+
   async function loadMemberProfile(user, db){
     if(!user || !db || typeof db.collection !== "function") return null;
 
@@ -239,6 +259,7 @@
     isAdminEmail,
     signInWithEmailPassword,
     signOut,
+    clearPlannerSessionState,
     loadMemberProfile,
     resolveAccess,
     onAccessChange
