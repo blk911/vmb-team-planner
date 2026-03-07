@@ -412,6 +412,55 @@
       box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
     }
     .revQuickBtns{ display:flex; gap:8px; margin:8px 0 0 0; }
+    .authGate{
+      position: fixed;
+      inset: 0;
+      z-index: 10050;
+      background: rgba(2,6,23,0.55);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: 16px;
+    }
+    .authCard{
+      width: min(420px, 96vw);
+      background:#fff;
+      border:1px solid rgba(15,23,42,0.12);
+      border-radius:16px;
+      box-shadow:0 20px 60px rgba(2,6,23,0.35);
+      padding: 14px;
+    }
+    .authTitle{ font-weight:900; font-size:18px; }
+    .authSub{ color: var(--muted); font-size:12px; margin-top:2px; margin-bottom:10px; }
+    .authRow{ display:flex; gap:10px; margin-top:10px; }
+    .authRow input{
+      width:100%;
+      height:40px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,0.12);
+      padding:0 12px;
+      font:inherit;
+    }
+    .authPassWrap{
+      width:100%;
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap:8px;
+      align-items:center;
+    }
+    .authToggleBtn{
+      height:40px;
+      border-radius:10px;
+      border:1px solid rgba(15,23,42,0.12);
+      background: rgba(15,23,42,0.04);
+      color:#0f172a;
+      font-size:12px;
+      font-weight:700;
+      padding:0 10px;
+      cursor:pointer;
+      white-space: nowrap;
+    }
+    .authErr{ margin-top:10px; color:#b91c1c; font-size:12px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -478,6 +527,27 @@
         </div>
       </div>
     </section>
+  </div>
+
+  <div id="adminAuthGate" class="authGate" style="display:none;">
+    <div class="authCard">
+      <div class="authTitle">Admin Sign In</div>
+      <div class="authSub">Sign in here to open the admin dashboard directly on <code>/admin</code>.</div>
+      <div class="authRow">
+        <input id="adminAuthEmail" type="email" placeholder="Email" autocomplete="email" />
+      </div>
+      <div class="authRow">
+        <div class="authPassWrap">
+          <input id="adminAuthPass" type="password" placeholder="Password" autocomplete="current-password" />
+          <button class="authToggleBtn" id="adminAuthTogglePassBtn" type="button" aria-label="Show password">Show</button>
+        </div>
+      </div>
+      <div class="authRow">
+        <button class="btn good" id="adminAuthSignInBtn" type="button">Sign in</button>
+        <button class="btn secondary" id="adminAuthResetBtn" type="button">Clear Session</button>
+      </div>
+      <div class="authErr" id="adminAuthErr" style="display:none;"></div>
+    </div>
   </div>
 
   <!-- Add Member modal -->
@@ -607,6 +677,35 @@
   }
   let MEMBERS = [];
   let MEMBER_PROJECTS = {}; // memberId -> [ project names ] (placeholder; could be from Firestore later)
+  let membersUnsub = null;
+  const authGate = $("adminAuthGate");
+  const authEmail = $("adminAuthEmail");
+  const authPass = $("adminAuthPass");
+  const authErr = $("adminAuthErr");
+  const authToggleBtn = $("adminAuthTogglePassBtn");
+  const authSignInBtn = $("adminAuthSignInBtn");
+  const authResetBtn = $("adminAuthResetBtn");
+  function showAdminGate(message){
+    if(authGate) authGate.style.display = "flex";
+    if(authErr){
+      if(message){
+        authErr.style.display = "block";
+        authErr.textContent = message;
+      } else {
+        authErr.style.display = "none";
+        authErr.textContent = "";
+      }
+    }
+    try { $("signOutBtn").style.display = "none"; } catch(_err) {}
+  }
+  function hideAdminGate(){
+    if(authGate) authGate.style.display = "none";
+    if(authErr){
+      authErr.style.display = "none";
+      authErr.textContent = "";
+    }
+    try { $("signOutBtn").style.display = ""; } catch(_err) {}
+  }
   function membersCollection(){
     try {
       if(!db || !db.collection) return null;
@@ -1314,7 +1413,7 @@
   $("signOutBtn").addEventListener("click", async () => {
     try { if(authApi) await authApi.signOut(); } catch(e){}
     try { localStorage.removeItem("planner.forceMember"); } catch(e){}
-    location.href = "/";
+    location.href = location.origin + "/admin";
   });
 
   document.addEventListener("click", (e) => {
@@ -1325,6 +1424,10 @@
   });
 
   function startWatch(){
+    if(membersUnsub){
+      try { membersUnsub(); } catch(_err) {}
+      membersUnsub = null;
+    }
     if(!db){
       console.warn("Admin: Firebase not loaded; member list will be empty.");
       renderMembers();
@@ -1341,7 +1444,7 @@
       renderMembers();
       return;
     }
-    membersRef.onSnapshot(snap => {
+    membersUnsub = membersRef.onSnapshot(snap => {
       console.log("[ADMIN] teamMembers snapshot size:", snap.size, snap.docs.map(d => d.id));
       MEMBERS = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
@@ -1378,7 +1481,13 @@
         email: access.email || null
       } : null);
       if(!access || !access.ok){
-        location.href = location.origin + "/";
+        if(membersUnsub){
+          try { membersUnsub(); } catch(_err) {}
+          membersUnsub = null;
+        }
+        MEMBERS = [];
+        renderMembers();
+        showAdminGate(access && access.message ? access.message : "Admin sign-in required.");
         return;
       }
       if(access.bypass){
@@ -1387,10 +1496,42 @@
       if(location.pathname !== "/admin"){
         history.replaceState(null, "", location.origin + "/admin");
       }
+      hideAdminGate();
       startWatch();
     },
     onError: (err) => {
       console.warn("[ADMIN] auth unavailable; startWatch disabled until auth is available.", err);
+      showAdminGate("Auth unavailable. Please try again.");
+    }
+  });
+  authToggleBtn && authToggleBtn.addEventListener("click", () => {
+    const hidden = !!authPass && authPass.type === "password";
+    if(authPass) authPass.type = hidden ? "text" : "password";
+    authToggleBtn.textContent = hidden ? "Hide" : "Show";
+    authToggleBtn.setAttribute("aria-label", hidden ? "Hide password" : "Show password");
+  });
+  authSignInBtn && authSignInBtn.addEventListener("click", async () => {
+    if(!authApi) return showAdminGate("Auth helpers not initialized.");
+    try {
+      const email = (authEmail && authEmail.value || "").trim().toLowerCase();
+      const pass = (authPass && authPass.value || "").trim();
+      if(!email || !pass) return showAdminGate("Enter email + password.");
+      await authApi.signInWithEmailPassword(email, pass);
+    } catch(err){
+      console.error("[ADMIN] signIn failed", err);
+      showAdminGate(err && err.message ? err.message : "Sign-in failed.");
+    }
+  });
+  authResetBtn && authResetBtn.addEventListener("click", async () => {
+    try { if(authApi) await authApi.signOut(); } catch(err){ console.warn("[ADMIN] reset signOut failed", err); }
+    if(authEmail) authEmail.value = "";
+    if(authPass) authPass.value = "";
+    showAdminGate("Session cleared. Sign in again.");
+  });
+  authPass && authPass.addEventListener("keydown", (e) => {
+    if(e.key === "Enter"){
+      e.preventDefault();
+      if(authSignInBtn) authSignInBtn.click();
     }
   });
 })();
