@@ -7,6 +7,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+  <script src="auth.js"></script>
   <script>
     (function loadGlobalNavScript(){
       const s = document.createElement("script");
@@ -3803,8 +3804,9 @@
     }
   }
 
-  // --- AUTH GATE (Email/Password) : compat firebase.auth() ---
+  // --- AUTH GATE (shared Firebase auth) ---
   (function wireEmailPasswordAuthGate(){
+    const authApi = window.VMBAuth || null;
     const gate = document.getElementById("authGate");
     const emailEl = document.getElementById("authEmail");
     const passEl = document.getElementById("authPass");
@@ -3814,10 +3816,6 @@
     const createBtn = document.getElementById("authCreateBtn");
     const signOutBtn = document.getElementById("authSignOutBtn");
     const errEl = document.getElementById("authErr");
-
-    const ADMIN_EMAILS = new Set([
-      "admin@venmebaby.com",
-    ]);
 
     function showGate(msg){
       if(gate) gate.style.display = "flex";
@@ -3831,26 +3829,9 @@
       if(errEl){ errEl.style.display = "none"; errEl.textContent = ""; }
     }
 
-    const host = String(location.hostname || "").toLowerCase();
-    const authBypassHosts = new Set([
-      "localhost",
-      "127.0.0.1",
-      "::1"
-    ]);
-    const isAuthBypassHost = authBypassHosts.has(host);
-    if(isAuthBypassHost){
-      // Bypass auth gate on approved hosts.
-      hideGate();
-      if(signOutBtn) signOutBtn.style.display = "none";
-      if(createBtn) createBtn.style.display = "none";
-      bootApp();
-      return;
-    }
-
-    const auth = window.firebaseAuth || null;
-    if(!auth){
-      console.warn("[auth] firebaseAuth missing; showing gate");
-      showGate("Auth not initialized. Check firebase-auth script include.");
+    if(!authApi){
+      console.warn("[auth] VMBAuth missing; showing gate");
+      showGate("Auth helpers not initialized. Check auth.js include.");
       return;
     }
 
@@ -3859,7 +3840,7 @@
         const email = (emailEl?.value || "").trim().toLowerCase();
         const pass = (passEl?.value || "").trim();
         if(!email || !pass) return showGate("Enter email + password.");
-        await auth.signInWithEmailAndPassword(email, pass);
+        await authApi.signInWithEmailPassword(email, pass);
       }catch(e){
         console.error("[auth] signIn failed", e);
         showGate((e && e.message) ? e.message : "Sign-in failed.");
@@ -3874,7 +3855,7 @@
     });
 
     resetBtn && resetBtn.addEventListener("click", async () => {
-      try { await auth.signOut(); } catch(e){ console.error("[auth] reset signOut failed", e); }
+      try { await authApi.signOut(); } catch(e){ console.error("[auth] reset signOut failed", e); }
       try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
       if(emailEl) emailEl.value = "";
       if(passEl) passEl.value = "";
@@ -3891,22 +3872,21 @@
     });
 
     signOutBtn && signOutBtn.addEventListener("click", async () => {
-      try { await auth.signOut(); } catch(e){ console.error(e); }
+      try { await authApi.signOut(); } catch(e){ console.error(e); }
     });
 
-    auth.onAuthStateChanged(async (user) => {
-      if(!user){
+    authApi.onAccessChange({
+      onResolved: async (access) => {
+      if(!access || !access.ok){
         if(signOutBtn) signOutBtn.style.display = "none";
         if(createBtn) createBtn.style.display = "none";
-        showGate();
+        showGate(access && access.message ? access.message : "");
         return;
       }
 
-      const email = String(user.email || "").toLowerCase();
       if(signOutBtn) signOutBtn.style.display = "inline-flex";
 
-      // Bootstrap admins can always access planner even if their member doc is missing.
-      if(ADMIN_EMAILS.has(email)){
+      if(access.admin){
         try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
         createBtn && (createBtn.style.display = "none");
         // Admin sign-in should land on planner admin tools.
@@ -3919,57 +3899,22 @@
         return;
       }
 
-      const db = window.firebaseDb || null;
-      if(!db){
-        showGate("Planner membership lookup unavailable.");
-        return;
-      }
-
-      try{
-        let member = null;
-        const memberSnap = await db.collection("teamMembers").doc(String(user.uid)).get();
-        if(memberSnap.exists){
-          member = memberSnap.data() || {};
-        } else {
-          // Legacy fallback: older records keyed by workspace slug instead of auth uid.
-          const byEmail = await db
-            .collection("teamMembers")
-            .where("email", "==", email)
-            .limit(1)
-            .get();
-          if(!byEmail.empty){
-            member = byEmail.docs[0].data() || {};
-          }
-        }
-        if(!member){
-          showGate("Signed in, but no active member profile found.");
-          return;
-        }
-        if(member.active === false){
-          showGate("Your member profile is inactive.");
-          return;
-        }
-
-        const workspaceId = String(member.workspaceId || member.id || user.uid || "").trim().toLowerCase();
-        if(workspaceId && workspaceId !== "jsw"){
-          try { localStorage.setItem(FORCE_MEMBER_KEY, workspaceId); } catch(e){}
-        } else {
-          try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
-        }
-      } catch(err){
-        console.error("[auth] member profile lookup failed", err);
-        showGate("Could not verify member access.");
-        return;
+      const workspaceId = String(access.workspaceId || "").trim().toLowerCase();
+      if(workspaceId && workspaceId !== "jsw"){
+        try { localStorage.setItem(FORCE_MEMBER_KEY, workspaceId); } catch(e){}
+      } else {
+        try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
       }
 
       createBtn && (createBtn.style.display = "none");
       hideGate();
       bootApp();
-    }, (err) => {
-      console.error("[auth] onAuthStateChanged failed", err);
+    },
+      onError: (err) => {
+      console.error("[auth] access listener failed", err);
       showGate("Auth listener failed.");
       if(signOutBtn) signOutBtn.style.display = "none";
-    });
+    }});
 
     showGate();
   })();

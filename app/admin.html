@@ -7,6 +7,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+  <script src="auth.js"></script>
   <script>
     (function loadGlobalNavScript(){
       const s = document.createElement("script");
@@ -484,7 +485,8 @@
 (function(){
   const $ = (id) => document.getElementById(id);
   const db = window.firebaseDb;
-  const auth = (typeof firebase !== "undefined" && firebase.auth) ? firebase.auth() : null;
+  const authApi = window.VMBAuth || null;
+  const auth = authApi ? authApi.getAuth() : null;
   const TEAM_ID = "vmb-team";
   const MEMBER_INIT_KEY = "daily_planner.member_init.v1";
   const REV_META_KEY = "vmb.revision.meta";
@@ -887,7 +889,7 @@
   $("memberSaveBtn").addEventListener("click", () => saveMember());
   $("memberName").addEventListener("keydown", (e) => { if(e.key === "Enter"){ e.preventDefault(); saveMember(); } });
   $("signOutBtn").addEventListener("click", async () => {
-    try { await firebase.auth().signOut(); } catch(e){}
+    try { if(authApi) await authApi.signOut(); } catch(e){}
     try { localStorage.removeItem("planner.forceMember"); } catch(e){}
     location.href = "/";
   });
@@ -939,38 +941,32 @@
 
   setNavDate();
   setRevPill();
-  const host = String(location.hostname || "").toLowerCase();
-  const authBypassHosts = new Set([
-    "localhost",
-    "127.0.0.1",
-    "::1"
-  ]);
-  const isAuthBypassHost = authBypassHosts.has(host);
-  if(isAuthBypassHost){
-    // Bypass auth gate on approved hosts.
-    try { $("signOutBtn").style.display = "none"; } catch(e){}
-    startWatch();
+  if(!authApi){
+    console.warn("[ADMIN] auth helpers missing; startWatch disabled.");
     return;
   }
-  if(auth && typeof auth.onAuthStateChanged === "function"){
-    auth.onAuthStateChanged((u) => {
-      console.log("[ADMIN] auth user:", u ? { uid: u.uid, email: u.email } : null);
-      if(u){
-        const email = String(u.email || "").trim().toLowerCase();
-        if(email !== "admin@venmebaby.com"){
-          location.href = "/";
-          return;
-        }
-        startWatch();
-      }
-      else {
+  authApi.onAccessChange({
+    requireAdmin: true,
+    onResolved: (access) => {
+      console.log("[ADMIN] access:", access ? {
+        ok: access.ok,
+        admin: access.admin,
+        bypass: access.bypass,
+        email: access.email || null
+      } : null);
+      if(!access || !access.ok){
         location.href = "/";
+        return;
       }
-    });
-  } else {
-    console.warn("[ADMIN] auth unavailable; startWatch disabled until auth is available.");
-    // startWatch(); // now invoked after auth state is ready
-  }
+      if(access.bypass){
+        try { $("signOutBtn").style.display = "none"; } catch(e){}
+      }
+      startWatch();
+    },
+    onError: (err) => {
+      console.warn("[ADMIN] auth unavailable; startWatch disabled until auth is available.", err);
+    }
+  });
 })();
 </script>
 </body>
