@@ -1,9 +1,9 @@
 (function(){
   const DEFAULT_LINKS = [
-    { id: "team", label: "TEAM", href: "/" },
-    { id: "admin", label: "ADMIN", href: "/admin" },
     { id: "marketing", label: "MARKETING", href: "/marketing-decks" },
-    { id: "datastore", label: "DATA STORE", href: "/dashboard/targets" }
+    { id: "datastore", label: "DATA STORE", href: "/dashboard/targets" },
+    { id: "team", label: "TEAM", href: "/" },
+    { id: "admin", label: "ADMIN", href: "/admin" }
   ];
 
   function normalizeUrl(url){

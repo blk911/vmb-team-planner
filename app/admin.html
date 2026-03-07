@@ -257,8 +257,21 @@
       background: rgba(15,23,42,0.02);
     }
     .memberRowTitle{ font-weight: 800; font-size: 15px; }
+    .memberRowTitleLine{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .memberRowMeta{ font-size: 12px; color: var(--muted); margin-top: 2px; }
     .memberRowAdded{ font-size: 11px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
+    .memberRowDoc{ font-size: 11px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
+    .dupPill{
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(217,119,6,0.20);
+      background: rgba(217,119,6,0.10);
+      color: #92400e;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
     .memberRowActions{ display: flex; gap: 8px; align-items: center; }
     .memberRowActions a{ text-decoration: none; }
 
@@ -779,6 +792,18 @@
     }
 
     list.innerHTML = "";
+    const duplicateCounts = new Map();
+    const duplicateKeyFor = (m) => {
+      const email = String(m && m.email || "").trim().toLowerCase();
+      const workspace = String(m && m.workspaceId || "").trim().toLowerCase();
+      const name = String(m && m.name || "").trim().toLowerCase();
+      return email || workspace || name || String(docIdFor(m) || "").trim().toLowerCase();
+    };
+    for(const m of MEMBERS){
+      const key = duplicateKeyFor(m);
+      duplicateCounts.set(key, (duplicateCounts.get(key) || 0) + 1);
+    }
+    let duplicateRows = 0;
     for(const m of MEMBERS){
       const id = docIdFor(m);
       const workspaceMemberId = slug(m.workspaceId || m.name || id);
@@ -786,14 +811,21 @@
       const meta = [m.phone || "", m.email || ""].filter(Boolean).join(" • ");
       const addDate = formatAddDate(m);
       const projNames = MEMBER_PROJECTS[id] && MEMBER_PROJECTS[id].length ? MEMBER_PROJECTS[id] : [];
+      const duplicateCount = duplicateCounts.get(duplicateKeyFor(m)) || 0;
+      const isDuplicate = duplicateCount > 1;
+      if(isDuplicate) duplicateRows++;
 
       const row = document.createElement("div");
       row.className = "memberRow";
       row.innerHTML = `
         <div>
-          <div class="memberRowTitle">${(m.name || "(no name)")}</div>
+          <div class="memberRowTitleLine">
+            <div class="memberRowTitle">${(m.name || "(no name)")}</div>
+            ${isDuplicate ? `<span class="dupPill">${duplicateCount} dupes</span>` : ""}
+          </div>
           <div class="memberRowMeta">${meta || "—"} ${m.role ? "• " + m.role : ""}</div>
           <div class="memberRowAdded">Added: ${addDate}</div>
+          <div class="memberRowDoc">Doc: ${id} • Workspace: ${workspaceMemberId || "—"}</div>
         </div>
         <div class="memberProjWrap">
           <div class="projDropWrap">
@@ -827,7 +859,7 @@
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-id");
         const workspaceId = btn.getAttribute("data-workspace-id");
-        if(!confirm("Remove this member?")) return;
+        if(!confirm("Remove this member entry?\n\nThis deletes only teamMembers/" + id + " and does not clear the whole database.")) return;
         try {
           const membersRef = membersCollection();
           if(!membersRef){ throw new Error("members collection unavailable"); }
@@ -848,7 +880,7 @@
       });
     });
 
-    if(count) count.textContent = MEMBERS.length + " member" + (MEMBERS.length === 1 ? "" : "s");
+    if(count) count.textContent = MEMBERS.length + " member" + (MEMBERS.length === 1 ? "" : "s") + (duplicateRows ? (" • " + duplicateRows + " duplicate row" + (duplicateRows === 1 ? "" : "s")) : "");
   }
 
   $("addMembersBtn").addEventListener("click", openAddModal);
