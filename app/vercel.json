@@ -1,9 +1,12 @@
 {
+  "redirects": [
+    { "source": "/admin/:path*", "destination": "/admin", "permanent": false },
+    { "source": "/admin.html/:path*", "destination": "/admin", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/auth.js", "destination": "/auth.js" },
     { "source": "/", "destination": "/index.html" },
     { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/admin/:path*", "destination": "/admin.html" },
     { "source": "/member", "destination": "/member.html" },
     { "source": "/index.html", "destination": "/index.html" },
     { "source": "/admin.html", "destination": "/admin.html" },

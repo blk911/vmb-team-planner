@@ -1,10 +1,13 @@
 {
+  "redirects": [
+    { "source": "/admin/:path*", "destination": "/admin", "permanent": false },
+    { "source": "/admin.html/:path*", "destination": "/admin", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/auth.js", "destination": "/app/auth.js" },
     { "source": "/global-nav.js", "destination": "/app/global-nav.js" },
     { "source": "/", "destination": "/app/index.html" },
     { "source": "/admin", "destination": "/app/admin.html" },
-    { "source": "/admin/:path*", "destination": "/app/admin.html" },
     { "source": "/member", "destination": "/app/member.html" },
     { "source": "/index.html", "destination": "/app/index.html" },
     { "source": "/admin.html", "destination": "/app/admin.html" },
