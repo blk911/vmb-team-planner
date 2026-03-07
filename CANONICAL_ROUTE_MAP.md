@@ -18,29 +18,27 @@ Routes already owned locally in this repo:
 - `/auth.js` -> shared auth helper
 - `/global-nav.js` -> shared nav helper
 
-Routes temporarily proxied to the marketing app:
+Routes currently hosted in the marketing app:
 
-- `/marketing-decks` -> `https://vmb-mkt.vercel.app/marketing-decks`
-- `/marketing-decks/*` -> `https://vmb-mkt.vercel.app/marketing-decks/*`
-- `/owner-deck` -> `https://vmb-mkt.vercel.app/owner-deck`
-- `/owner-deck/*` -> `https://vmb-mkt.vercel.app/owner-deck/*`
-- `/dashboard/targets` -> `https://vmb-mkt.vercel.app/dashboard/targets`
-- `/dashboard/*` -> `https://vmb-mkt.vercel.app/dashboard/*`
+- `https://vmb-mkt.vercel.app/marketing-decks`
+- `https://vmb-mkt.vercel.app/owner-deck`
+- `https://vmb-mkt.vercel.app/dashboard/targets`
 
 ## Phase Structure
 
 Phase 1: Same-origin shell
 
 - Navigation points to same-origin paths only.
-- This repo's Vercel app proxies marketing pages that still live elsewhere.
+- Planner/admin stay on this repo's canonical app host.
+- Marketing/data links stay on the real marketing host until those routes are merged locally.
 - Auth stays on the canonical origin for planner and admin pages in this repo.
-- Main marketing nav target is now `/marketing-decks`.
-- `/owner-deck` remains available as a legacy hold route and is not the primary marketing landing page.
+- Main marketing nav target is now `https://vmb-mkt.vercel.app/marketing-decks`.
+- `/owner-deck` remains available on the marketing host as a legacy hold route and is not the primary marketing landing page.
 
 Phase 2: Merge marketing routes locally
 
 - Copy the marketing route implementation into this repo.
-- Replace external rewrites with local files or route handlers.
+- Replace external marketing-host links with local files or route handlers.
 - Keep the same public URLs so navigation and auth do not change again.
 
 Phase 3: Remove legacy split-host assumptions
@@ -65,5 +63,5 @@ If those routes depend on shared nested assets or child routes, keep these local
 ## Notes
 
 - The current proxy structure is a bridge, not the final architecture.
-- Same-origin navigation is now prepared from this repo side.
-- Once the marketing routes are copied in, the external rewrites can be removed without changing public paths.
+- Direct cross-origin links are temporarily restored because the marketing app does not render correctly through the planner-host rewrite path.
+- Once the marketing routes are copied in, the nav can switch back to local same-origin paths.

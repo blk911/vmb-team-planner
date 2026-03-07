@@ -1,7 +1,7 @@
 (function(){
   const DEFAULT_LINKS = [
-    { id: "marketing", label: "MARKETING", href: "/marketing-decks" },
-    { id: "datastore", label: "DATA STORE", href: "/dashboard/targets" },
+    { id: "marketing", label: "MARKETING", href: "https://vmb-mkt.vercel.app/marketing-decks" },
+    { id: "datastore", label: "DATA STORE", href: "https://vmb-mkt.vercel.app/dashboard/targets" },
     { id: "team", label: "TEAM", href: "/" },
     { id: "admin", label: "ADMIN", href: "/admin" }
   ];

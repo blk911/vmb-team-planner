@@ -2,12 +2,6 @@
   "rewrites": [
     { "source": "/auth.js", "destination": "/app/auth.js" },
     { "source": "/global-nav.js", "destination": "/app/global-nav.js" },
-    { "source": "/marketing-decks", "destination": "https://vmb-mkt.vercel.app/marketing-decks" },
-    { "source": "/marketing-decks/:path*", "destination": "https://vmb-mkt.vercel.app/marketing-decks/:path*" },
-    { "source": "/owner-deck", "destination": "https://vmb-mkt.vercel.app/owner-deck" },
-    { "source": "/owner-deck/:path*", "destination": "https://vmb-mkt.vercel.app/owner-deck/:path*" },
-    { "source": "/dashboard/targets", "destination": "https://vmb-mkt.vercel.app/dashboard/targets" },
-    { "source": "/dashboard/:path*", "destination": "https://vmb-mkt.vercel.app/dashboard/:path*" },
     { "source": "/", "destination": "/app/index.html" },
     { "source": "/admin", "destination": "/app/admin.html" },
     { "source": "/member", "destination": "/app/member.html" },
