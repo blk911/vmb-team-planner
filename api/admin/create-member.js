@@ -50,6 +50,71 @@ function slug(name) {
     .replace(/[^a-z0-9-]/g, "") || "member";
 }
 
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeId(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getKnownCanonicalMemberIdByEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return "";
+  const map = {
+    "admin@vmb.com": "admin",
+    "admin@venmebaby.com": "admin",
+    "blk911@gmail.com": "jsw",
+    "oreo12798@gmail.com": "katie",
+    "taylormanaya@gmail.com": "taylor",
+  };
+  return map[normalized] || "";
+}
+
+function scoreMemberDoc(snap, ctx) {
+  if (!snap || !snap.exists) return -1;
+  const data = snap.data() || {};
+  const docId = normalizeId(snap.id);
+  const workspaceId = normalizeId(data.workspaceId || data.id || "");
+  const email = normalizeEmail(data.email || "");
+  let score = 0;
+  if (ctx.knownId && docId === ctx.knownId) score += 1000;
+  if (ctx.workspaceId && docId === ctx.workspaceId) score += 700;
+  if (ctx.workspaceId && workspaceId === ctx.workspaceId) score += 500;
+  if (ctx.email && email === ctx.email) score += 300;
+  if (docId && workspaceId && docId === workspaceId) score += 150;
+  if (ctx.userUid && docId === ctx.userUid) score -= 100;
+  return score;
+}
+
+async function findCanonicalMemberDoc(db, ctx) {
+  const directIds = [ctx.knownId, ctx.workspaceId]
+    .map(normalizeId)
+    .filter(Boolean);
+  const snaps = [];
+
+  for (const docId of directIds) {
+    const snap = await db.collection("teamMembers").doc(docId).get();
+    if (snap.exists) snaps.push(snap);
+  }
+
+  if (ctx.email) {
+    const byEmail = await db.collection("teamMembers").where("email", "==", ctx.email).get();
+    for (const snap of byEmail.docs) snaps.push(snap);
+  }
+
+  const deduped = new Map();
+  for (const snap of snaps) {
+    if (snap && snap.exists && !deduped.has(snap.id)) deduped.set(snap.id, snap);
+  }
+
+  const ranked = [...deduped.values()]
+    .map((snap) => ({ snap, score: scoreMemberDoc(snap, ctx) }))
+    .sort((a, b) => b.score - a.score);
+
+  return ranked.length ? ranked[0].snap : null;
+}
+
 function randomTempPassword() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
   let out = "";
@@ -121,7 +186,7 @@ module.exports = async (req, res) => {
 
   const name = String(body.name || "").trim();
   const phone = String(body.phone || "").trim();
-  const email = String(body.email || "").trim().toLowerCase();
+  const email = normalizeEmail(body.email);
   const role = String(body.role || "member").trim() || "member";
   const forcePasswordReset = body.forcePasswordReset !== false;
 
@@ -153,7 +218,44 @@ module.exports = async (req, res) => {
     }
   }
 
-  const memberDocId = userRecord.uid;
+  const knownCanonicalId = getKnownCanonicalMemberIdByEmail(email);
+  let existingMemberSnap;
+  try {
+    existingMemberSnap = await findCanonicalMemberDoc(db, {
+      email,
+      workspaceId,
+      knownId: knownCanonicalId,
+      userUid: normalizeId(userRecord.uid),
+    });
+  } catch (err) {
+    return json(res, 500, { ok: false, error: "member_lookup_failed", detail: String(err.message || err) });
+  }
+  const memberDocId = existingMemberSnap ? existingMemberSnap.id : (knownCanonicalId || workspaceId || userRecord.uid);
+  const suppressedUidDuplicate = normalizeId(userRecord.uid) && normalizeId(userRecord.uid) !== normalizeId(memberDocId);
+
+  if (existingMemberSnap) {
+    console.log("[create-member] canonical member record found", {
+      email,
+      workspaceId,
+      canonicalMemberId: memberDocId,
+      authUid: userRecord.uid,
+    });
+  } else {
+    console.log("[create-member] creating new canonical member record", {
+      email,
+      workspaceId,
+      canonicalMemberId: memberDocId,
+      authUid: userRecord.uid,
+    });
+  }
+  if (suppressedUidDuplicate) {
+    console.log("[create-member] duplicate UID member doc suppressed", {
+      email,
+      workspaceId,
+      canonicalMemberId: memberDocId,
+      suppressedUidDocId: userRecord.uid,
+    });
+  }
 
   try {
     const ts = admin.firestore.FieldValue.serverTimestamp();
@@ -192,6 +294,8 @@ module.exports = async (req, res) => {
     uid: userRecord.uid,
     workspaceId,
     email,
+    canonicalMemberId: memberDocId,
+    suppressedUidDuplicate,
     createdAuthUser,
     tempPassword: createdAuthUser ? generatedPassword : null,
     passwordResetLink,

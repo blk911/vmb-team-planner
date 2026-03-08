@@ -10,6 +10,27 @@
     return String(value || "").trim().toLowerCase();
   }
 
+  function stableMemberId(value){
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+  }
+
+  function getKnownCanonicalMemberIdByEmail(email){
+    const normalized = normalizeEmail(email);
+    if(!normalized) return "";
+    const map = {
+      "admin@vmb.com": "admin",
+      "admin@venmebaby.com": "admin",
+      "blk911@gmail.com": "jsw",
+      "oreo12798@gmail.com": "katie",
+      "taylormanaya@gmail.com": "taylor"
+    };
+    return map[normalized] || "";
+  }
+
   function getAllowedAdminEmails(){
     const fromWindow = Array.isArray(win.VMB_ALLOWED_ADMIN_EMAILS)
       ? win.VMB_ALLOWED_ADMIN_EMAILS
@@ -188,21 +209,102 @@
     } catch(_err) {}
   }
 
+  function buildStableMemberCandidates(user){
+    const email = normalizeEmail(user && user.email);
+    const candidates = [];
+    const add = (value) => {
+      const next = stableMemberId(value);
+      if(next && !candidates.includes(next)) candidates.push(next);
+    };
+    add(getKnownCanonicalMemberIdByEmail(email));
+    add(user && user.displayName);
+    if(email && email.includes("@")) add(email.split("@")[0]);
+    return candidates;
+  }
+
+  function scoreMemberDoc(snap, ctx){
+    if(!snap || !snap.exists) return -1;
+    const data = snap.data() || {};
+    const docId = normalizeId(snap.id);
+    const workspaceId = normalizeId(data.workspaceId || data.id || "");
+    const email = normalizeEmail(data.email || "");
+    let score = 0;
+    if(ctx.knownId && docId === ctx.knownId) score += 1000;
+    if(ctx.candidateIds.includes(docId)) score += 700;
+    if(workspaceId && ctx.candidateIds.includes(workspaceId)) score += 500;
+    if(ctx.email && email === ctx.email) score += 300;
+    if(docId && workspaceId && docId === workspaceId) score += 150;
+    if(ctx.uid && docId === ctx.uid) score -= 100;
+    return score;
+  }
+
+  function choosePreferredMemberDoc(snaps, ctx){
+    const deduped = new Map();
+    for(const snap of snaps){
+      if(snap && snap.exists && !deduped.has(snap.id)) deduped.set(snap.id, snap);
+    }
+    const ranked = [...deduped.values()]
+      .map((snap) => ({ snap, score: scoreMemberDoc(snap, ctx) }))
+      .sort((a, b) => b.score - a.score);
+    return ranked.length ? ranked[0].snap : null;
+  }
+
   async function loadMemberProfile(user, db){
     if(!user || !db || typeof db.collection !== "function") return null;
 
     const uid = String(user.uid || "").trim();
-    if(uid){
-      const memberSnap = await db.collection("teamMembers").doc(uid).get();
-      if(memberSnap.exists) return memberSnap.data() || {};
+    const email = normalizeEmail(user.email);
+    const knownId = normalizeId(getKnownCanonicalMemberIdByEmail(email));
+    const candidateIds = buildStableMemberCandidates(user);
+    const candidateSnaps = [];
+
+    for(const candidateId of candidateIds){
+      const snap = await db.collection("teamMembers").doc(candidateId).get();
+      if(snap.exists) candidateSnaps.push(snap);
     }
 
-    const email = normalizeEmail(user.email);
-    if(!email) return null;
+    if(email){
+      const byEmail = await db.collection("teamMembers").where("email", "==", email).get();
+      for(const snap of byEmail.docs) candidateSnaps.push(snap);
+    }
 
-    const byEmail = await db.collection("teamMembers").where("email", "==", email).limit(1).get();
-    if(byEmail.empty) return null;
-    return byEmail.docs[0].data() || {};
+    const preferredSnap = choosePreferredMemberDoc(candidateSnaps, {
+      email,
+      uid: normalizeId(uid),
+      knownId,
+      candidateIds
+    });
+    if(preferredSnap){
+      const preferred = { id: preferredSnap.id, ...(preferredSnap.data() || {}) };
+      if(uid && preferredSnap.id !== uid){
+        const uidSnap = await db.collection("teamMembers").doc(uid).get();
+        if(uidSnap.exists){
+          console.info("[auth] duplicate UID member doc suppressed", {
+            email,
+            uid,
+            canonicalId: preferredSnap.id,
+            uidDocId: uidSnap.id
+          });
+        } else {
+          console.info("[auth] canonical member profile found", {
+            email,
+            uid,
+            canonicalId: preferredSnap.id
+          });
+        }
+      }
+      return preferred;
+    }
+
+    if(uid){
+      const memberSnap = await db.collection("teamMembers").doc(uid).get();
+      if(memberSnap.exists){
+        console.info("[auth] falling back to UID member profile", { email, uid, uidDocId: memberSnap.id });
+        return { id: memberSnap.id, ...(memberSnap.data() || {}) };
+      }
+    }
+
+    return null;
   }
 
   async function resolveAccess(user, opts){
