@@ -1,4 +1,7 @@
 (function(win){
+  const SESSION_KEY = "team.auth.session";
+  const FLASH_KEY = "team.auth.flash";
+
   function normalizeEmail(value){
     return String(value || "").trim().toLowerCase();
   }
@@ -62,8 +65,103 @@
 
   async function signOut(){
     const auth = getAuth();
+    clearStoredSession();
+    setFlashMessage("");
     if(!auth || typeof auth.signOut !== "function") return;
     await auth.signOut();
+  }
+
+  function readSessionStorage(key){
+    try {
+      return win.sessionStorage.getItem(key);
+    } catch(_err) {
+      return null;
+    }
+  }
+
+  function writeSessionStorage(key, value){
+    try {
+      win.sessionStorage.setItem(key, value);
+    } catch(_err) {}
+  }
+
+  function removeSessionStorage(key){
+    try {
+      win.sessionStorage.removeItem(key);
+    } catch(_err) {}
+  }
+
+  function setFlashMessage(message){
+    const text = String(message || "").trim();
+    if(!text){
+      removeSessionStorage(FLASH_KEY);
+      return;
+    }
+    writeSessionStorage(FLASH_KEY, text);
+  }
+
+  function consumeFlashMessage(){
+    const value = readSessionStorage(FLASH_KEY);
+    removeSessionStorage(FLASH_KEY);
+    return value || "";
+  }
+
+  function clearStoredSession(){
+    removeSessionStorage(SESSION_KEY);
+  }
+
+  function setStoredSession(session){
+    if(!session || typeof session !== "object"){
+      clearStoredSession();
+      return;
+    }
+    writeSessionStorage(SESSION_KEY, JSON.stringify({
+      role: session.role === "admin" ? "admin" : "member",
+      email: normalizeEmail(session.email),
+      workspaceId: normalizeId(session.workspaceId),
+      ts: Date.now()
+    }));
+  }
+
+  function getStoredSession(){
+    try {
+      const raw = readSessionStorage(SESSION_KEY);
+      if(!raw) return null;
+      const parsed = JSON.parse(raw);
+      if(!parsed || typeof parsed !== "object") return null;
+      return {
+        role: parsed.role === "admin" ? "admin" : "member",
+        email: normalizeEmail(parsed.email),
+        workspaceId: normalizeId(parsed.workspaceId),
+        ts: Number(parsed.ts) || 0
+      };
+    } catch(_err) {
+      return null;
+    }
+  }
+
+  function persistSessionFromAccess(access){
+    if(!access){
+      clearStoredSession();
+      return;
+    }
+    if(access.bypass){
+      setStoredSession({
+        role: "admin",
+        email: access.email || "",
+        workspaceId: access.workspaceId || "jsw"
+      });
+      return;
+    }
+    if(!access.user){
+      clearStoredSession();
+      return;
+    }
+    setStoredSession({
+      role: access.admin ? "admin" : "member",
+      email: access.email || "",
+      workspaceId: access.workspaceId || access.member?.workspaceId || access.member?.id || access.user?.uid || ""
+    });
   }
 
   function clearPlannerSessionState(){
@@ -74,6 +172,8 @@
     for(const key of localKeys){
       try { win.localStorage.removeItem(key); } catch(_err) {}
     }
+    removeSessionStorage(SESSION_KEY);
+    removeSessionStorage(FLASH_KEY);
     try {
       const keys = [];
       for(let i = 0; i < win.sessionStorage.length; i++){
@@ -239,6 +339,7 @@
     return auth.onAuthStateChanged(function(user){
       Promise.resolve(resolveAccess(user, options))
         .then(function(result){
+          persistSessionFromAccess(result);
           if(typeof options.onResolved === "function") options.onResolved(result);
         })
         .catch(function(err){
@@ -257,6 +358,11 @@
     getAuth,
     getDb,
     isAdminEmail,
+    getStoredSession,
+    setStoredSession,
+    clearStoredSession,
+    setFlashMessage,
+    consumeFlashMessage,
     signInWithEmailPassword,
     signOut,
     clearPlannerSessionState,

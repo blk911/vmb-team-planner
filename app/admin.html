@@ -625,6 +625,9 @@
   const db = window.firebaseDb;
   const authApi = window.VMBAuth || null;
   const auth = authApi ? authApi.getAuth() : null;
+  const initialSession = authApi && typeof authApi.getStoredSession === "function"
+    ? authApi.getStoredSession()
+    : null;
   const TEAM_ID = "vmb-team";
   const MEMBER_INIT_KEY = "daily_planner.member_init.v1";
   const REV_META_KEY = "vmb.revision.meta";
@@ -678,6 +681,7 @@
   let MEMBERS = [];
   let MEMBER_PROJECTS = {}; // memberId -> [ project names ] (placeholder; could be from Firestore later)
   let membersUnsub = null;
+  let restoreAdminGateTimer = null;
   const authGate = $("adminAuthGate");
   const authEmail = $("adminAuthEmail");
   const authPass = $("adminAuthPass");
@@ -705,6 +709,18 @@
       authErr.textContent = "";
     }
     try { $("signOutBtn").style.display = ""; } catch(_err) {}
+  }
+  function clearRestoreAdminGateTimer(){
+    if(!restoreAdminGateTimer) return;
+    clearTimeout(restoreAdminGateTimer);
+    restoreAdminGateTimer = null;
+  }
+  function scheduleRestoreAdminGate(){
+    if(restoreAdminGateTimer) return;
+    restoreAdminGateTimer = setTimeout(() => {
+      restoreAdminGateTimer = null;
+      showAdminGate("Admin sign-in required.");
+    }, 1200);
   }
   function membersCollection(){
     try {
@@ -1474,6 +1490,7 @@
   authApi.onAccessChange({
     requireAdmin: true,
     onResolved: (access) => {
+      clearRestoreAdminGateTimer();
       console.log("[ADMIN] access:", access ? {
         ok: access.ok,
         admin: access.admin,
@@ -1481,6 +1498,17 @@
         email: access.email || null
       } : null);
       if(!access || !access.ok){
+        if(access && access.code === "not_admin"){
+          if(authApi && typeof authApi.setFlashMessage === "function"){
+            authApi.setFlashMessage("Admin access required.");
+          }
+          location.replace("/");
+          return;
+        }
+        if(access && access.code === "signed_out" && initialSession && initialSession.role === "admin"){
+          scheduleRestoreAdminGate();
+          return;
+        }
         if(membersUnsub){
           try { membersUnsub(); } catch(_err) {}
           membersUnsub = null;

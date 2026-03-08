@@ -3808,6 +3808,9 @@
   // --- AUTH GATE (shared Firebase auth) ---
   (function wireEmailPasswordAuthGate(){
     const authApi = window.VMBAuth || null;
+    const initialFlash = authApi && typeof authApi.consumeFlashMessage === "function"
+      ? authApi.consumeFlashMessage()
+      : "";
     const gate = document.getElementById("authGate");
     const emailEl = document.getElementById("authEmail");
     const passEl = document.getElementById("authPass");
@@ -3894,7 +3897,7 @@
         if(signOutBtn) signOutBtn.style.display = "none";
         if(plannerSignOutBtn) plannerSignOutBtn.style.display = "none";
         if(createBtn) createBtn.style.display = "none";
-        showGate(access && access.message ? access.message : "");
+        showGate(initialFlash || (access && access.message ? access.message : ""));
         return;
       }
 
@@ -3932,7 +3935,7 @@
       if(plannerSignOutBtn) plannerSignOutBtn.style.display = "none";
     }});
 
-    showGate();
+    showGate(initialFlash || "");
   })();
 
 })();
