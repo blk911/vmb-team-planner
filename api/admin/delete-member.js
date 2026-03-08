@@ -27,9 +27,7 @@ function parseJsonBody(req) {
     let raw = "";
     req.on("data", (chunk) => {
       raw += chunk;
-      if (raw.length > 1_000_000) {
-        reject(new Error("Payload too large"));
-      }
+      if (raw.length > 1_000_000) reject(new Error("Payload too large"));
     });
     req.on("end", () => {
       try {
@@ -40,23 +38,6 @@ function parseJsonBody(req) {
     });
     req.on("error", reject);
   });
-}
-
-function slug(name) {
-  return String(name || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "") || "member";
-}
-
-function randomTempPassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  let out = "";
-  for (let i = 0; i < 14; i++) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return out;
 }
 
 function json(res, status, body) {
@@ -119,82 +100,37 @@ module.exports = async (req, res) => {
     return json(res, 400, { ok: false, error: "invalid_json" });
   }
 
-  const name = String(body.name || "").trim();
-  const phone = String(body.phone || "").trim();
-  const email = String(body.email || "").trim().toLowerCase();
-  const role = String(body.role || "member").trim() || "member";
-  const forcePasswordReset = body.forcePasswordReset !== false;
+  const memberId = String(body.memberId || "").trim();
+  if (!memberId) return json(res, 400, { ok: false, error: "member_id_required" });
 
-  if (!name) return json(res, 400, { ok: false, error: "name_required" });
-  if (!email) return json(res, 400, { ok: false, error: "email_required" });
-
-  const workspaceId = slug(name);
-
-  let userRecord;
-  let createdAuthUser = false;
-  let generatedPassword = null;
-
-  try {
-    userRecord = await auth.getUserByEmail(email);
-  } catch (err) {
-    if (err && err.code === "auth/user-not-found") {
-      generatedPassword = randomTempPassword();
-      userRecord = await auth.createUser({
-        uid: workspaceId,
-        email,
-        password: generatedPassword,
-        displayName: name,
-        emailVerified: false,
-        disabled: false,
-      });
-      createdAuthUser = true;
-    } else {
-      return json(res, 500, { ok: false, error: "auth_lookup_failed", detail: String(err.message || err) });
-    }
+  if (memberId === "admin" || memberId === "jsw") {
+    return json(res, 409, { ok: false, error: "protected_member", memberId });
   }
 
-  const memberDocId = userRecord.uid;
-
+  const ref = db.collection("teamMembers").doc(memberId);
+  let snap;
   try {
-    const ts = admin.firestore.FieldValue.serverTimestamp();
-    await db.collection("teamMembers").doc(memberDocId).set(
-      {
-        id: memberDocId,
-        uid: userRecord.uid,
-        workspaceId,
-        name,
-        email,
-        phone: phone || null,
-        role,
-        active: true,
-        updatedAt: ts,
-        createdAt: ts,
-        updatedBy: callerEmail,
-      },
-      { merge: true }
-    );
+    snap = await ref.get();
   } catch (err) {
-    return json(res, 500, { ok: false, error: "member_write_failed", detail: String(err.message || err) });
+    return json(res, 500, { ok: false, error: "member_read_failed", detail: String(err.message || err), memberId });
   }
 
-  let passwordResetLink = null;
-  if (forcePasswordReset) {
-    try {
-      passwordResetLink = await auth.generatePasswordResetLink(email);
-    } catch {
-      passwordResetLink = null;
-    }
+  if (!snap.exists) {
+    return json(res, 404, { ok: false, error: "member_not_found", memberId });
+  }
+
+  try {
+    await ref.delete();
+  } catch (err) {
+    return json(res, 500, { ok: false, error: "member_delete_failed", detail: String(err.message || err), memberId });
   }
 
   return json(res, 200, {
     ok: true,
-    memberId: memberDocId,
-    uid: userRecord.uid,
-    workspaceId,
-    email,
-    createdAuthUser,
-    tempPassword: createdAuthUser ? generatedPassword : null,
-    passwordResetLink,
+    deletedPath: "teamMembers/" + memberId,
+    memberId,
+    email: snap.get("email") || null,
+    name: snap.get("name") || null,
+    deletedBy: callerEmail,
   });
 };
-

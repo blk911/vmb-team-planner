@@ -274,6 +274,23 @@
     }
     .memberRowActions{ display: flex; gap: 8px; align-items: center; }
     .memberRowActions a{ text-decoration: none; }
+    .memberActionStatus{
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(15,23,42,0.03);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .memberActionStatus.isError{
+      border-color: rgba(225,29,72,0.24);
+      background: rgba(225,29,72,0.08);
+      color: #9f1239;
+    }
     .resetIntro{
       margin: 0 0 14px 0;
       color: var(--muted);
@@ -504,6 +521,7 @@
           <span class="pill" id="memberCount">0 members</span>
         </div>
         <div class="panelBody">
+          <div class="memberActionStatus" id="memberActionStatus">Ready.</div>
           <div class="memberList" id="memberListDiv"></div>
         </div>
       </div>
@@ -635,11 +653,11 @@
     {
       id: "admin",
       name: "ADMIN",
-      email: "admin@venmebaby.com",
+      email: "admin@vmb.com",
       phone: "0000000000",
       role: "admin",
       active: true,
-      aliases: ["admin", "admin@venmebaby.com"]
+      aliases: ["admin", "admin@vmb.com", "admin@venmebaby.com"]
     },
     {
       id: "jsw",
@@ -689,6 +707,12 @@
   const authToggleBtn = $("adminAuthTogglePassBtn");
   const authSignInBtn = $("adminAuthSignInBtn");
   const authResetBtn = $("adminAuthResetBtn");
+  function setMemberActionStatus(message, isError){
+    const el = $("memberActionStatus");
+    if(!el) return;
+    el.textContent = String(message || "").trim() || "Ready.";
+    el.classList.toggle("isError", !!isError);
+  }
   function showAdminGate(message){
     if(authGate) authGate.style.display = "flex";
     if(authErr){
@@ -973,6 +997,30 @@
     try { body = await res.json(); } catch(e){}
     if(!res.ok || !body || body.ok !== true){
       const msg = body && body.error ? body.error : ("HTTP " + res.status);
+      throw new Error(msg);
+    }
+    return body;
+  }
+
+  async function deleteMemberViaAdminApi(memberId){
+    if(!auth || !auth.currentUser){
+      throw new Error("Admin sign-in required.");
+    }
+    const id = String(memberId || "").trim();
+    if(!id) throw new Error("Member id required.");
+    const idToken = await auth.currentUser.getIdToken();
+    const res = await fetch("/api/admin/delete-member", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + idToken
+      },
+      body: JSON.stringify({ memberId: id })
+    });
+    let body = {};
+    try { body = await res.json(); } catch(e){}
+    if(!res.ok || !body || body.ok !== true){
+      const msg = body && (body.detail || body.error) ? (body.detail || body.error) : ("HTTP " + res.status);
       throw new Error(msg);
     }
     return body;
@@ -1317,6 +1365,8 @@
       const projNames = MEMBER_PROJECTS[id] && MEMBER_PROJECTS[id].length ? MEMBER_PROJECTS[id] : [];
       const duplicateCount = duplicateCounts.get(duplicateKeyFor(m)) || 0;
       const isDuplicate = duplicateCount > 1;
+      const emailNorm = String(m.email || "").trim().toLowerCase();
+      const isProtectedRow = workspaceMemberId === "admin" || workspaceMemberId === "jsw" || id === "admin" || id === "jsw";
       if(isDuplicate) duplicateRows++;
 
       const row = document.createElement("div");
@@ -1341,7 +1391,7 @@
         </div>
         <div class="memberRowActions">
           <a href="${workspaceHref}" class="btn good workspaceBtn" data-workspace-id="${workspaceMemberId}">WORKSPACE</a>
-          <button type="button" class="btn danger btnRemove" data-id="${id}" data-workspace-id="${workspaceMemberId}" ${(workspaceMemberId === "admin" || workspaceMemberId === "jsw") ? "disabled" : ""}>Remove</button>
+          <button type="button" class="btn danger btnRemove" data-id="${id}" data-email="${emailNorm}" data-name="${String(m.name || "")}" data-workspace-id="${workspaceMemberId}" ${isProtectedRow ? "disabled" : ""}>Remove</button>
         </div>
       `;
       list.appendChild(row);
@@ -1362,15 +1412,30 @@
     list.querySelectorAll(".btnRemove").forEach(btn => {
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-id");
+        const email = btn.getAttribute("data-email");
+        const name = btn.getAttribute("data-name");
         const workspaceId = btn.getAttribute("data-workspace-id");
+        const targetPath = "teamMembers/" + id;
+        console.log("[ADMIN] remove requested:", { id, email, name, workspaceId, targetPath });
         if(!confirm("Remove this member entry?\n\nThis deletes only teamMembers/" + id + " and does not clear the whole database.")) return;
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "DELETING...";
+        setMemberActionStatus("Deleting " + targetPath + " (" + (email || name || "unknown") + ") ...", false);
         try {
-          const membersRef = membersCollection();
-          if(!membersRef){ throw new Error("members collection unavailable"); }
-          await membersRef.doc(id).delete();
+          const result = await deleteMemberViaAdminApi(id);
+          MEMBERS = MEMBERS.filter((member) => docIdFor(member) !== id);
+          renderMembers();
           clearMemberWorkspace(id);
           clearMemberWorkspace(workspaceId);
-        } catch(e){ console.error(e); }
+          console.log("[ADMIN] remove success:", result);
+          setMemberActionStatus("Deleted " + (result.deletedPath || targetPath) + ".", false);
+        } catch(e){
+          console.error("[ADMIN] remove failed:", { id, email, name, workspaceId, targetPath, error: e });
+          setMemberActionStatus("Delete failed for " + targetPath + ": " + (e && e.message ? e.message : String(e)), true);
+          btn.disabled = false;
+          btn.textContent = originalText;
+        }
       });
     });
 

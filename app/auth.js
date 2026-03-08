@@ -17,8 +17,10 @@
     const emails = fromWindow
       .map(normalizeEmail)
       .filter(Boolean);
-    if(!emails.includes("admin@venmebaby.com")) emails.push("admin@venmebaby.com");
     if(!emails.includes("blk911@gmail.com")) emails.push("blk911@gmail.com");
+    if(!emails.includes("admin@vmb.com")) emails.push("admin@vmb.com");
+    // Keep the legacy address temporarily so older sessions or seeded docs do not lose access during cleanup.
+    if(!emails.includes("admin@venmebaby.com")) emails.push("admin@venmebaby.com");
     return new Set(emails);
   }
 
