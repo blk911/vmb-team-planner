@@ -3821,6 +3821,8 @@
     const signOutBtn = document.getElementById("authSignOutBtn");
     const plannerSignOutBtn = document.getElementById("plannerSignOutBtn");
     const errEl = document.getElementById("authErr");
+    let accessResolved = false;
+    let gateTimer = null;
 
     function showGate(msg){
       if(gate) gate.style.display = "flex";
@@ -3832,6 +3834,18 @@
     function hideGate(){
       if(gate) gate.style.display = "none";
       if(errEl){ errEl.style.display = "none"; errEl.textContent = ""; }
+    }
+    function stopGateTimer(){
+      if(!gateTimer) return;
+      clearTimeout(gateTimer);
+      gateTimer = null;
+    }
+    function scheduleInitialGate(){
+      stopGateTimer();
+      gateTimer = setTimeout(() => {
+        gateTimer = null;
+        if(!accessResolved) showGate(initialFlash || "");
+      }, 180);
     }
     async function clearPlannerSession(opts){
       const options = opts || {};
@@ -3893,6 +3907,8 @@
 
     authApi.onAccessChange({
       onResolved: async (access) => {
+      accessResolved = true;
+      stopGateTimer();
       if(!access || !access.ok){
         if(signOutBtn) signOutBtn.style.display = "none";
         if(plannerSignOutBtn) plannerSignOutBtn.style.display = "none";
@@ -3903,39 +3919,28 @@
 
       if(signOutBtn) signOutBtn.style.display = "inline-flex";
       if(plannerSignOutBtn) plannerSignOutBtn.style.display = "inline-flex";
-
-      if(access.admin){
-        try { authApi.clearPlannerSessionState(); } catch(e){ console.error("[auth] clearPlannerSessionState failed", e); }
-        createBtn && (createBtn.style.display = "none");
-        // Admin sign-in should land on planner admin tools.
-        if(!location.pathname.endsWith("/admin") && !location.pathname.endsWith("/admin.html")){
-          location.href = "/admin";
-          return;
-        }
-        hideGate();
-        bootApp();
-        return;
-      }
-
-      const workspaceId = String(access.workspaceId || "").trim().toLowerCase();
-      if(workspaceId && workspaceId !== "jsw"){
-        try { localStorage.setItem(FORCE_MEMBER_KEY, workspaceId); } catch(e){}
-      } else {
-        try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
-      }
-
       createBtn && (createBtn.style.display = "none");
+      const workspaceId = String(access.workspaceId || "").trim().toLowerCase();
+      if(!access.admin){
+        if(workspaceId && workspaceId !== "jsw"){
+          try { localStorage.setItem(FORCE_MEMBER_KEY, workspaceId); } catch(e){}
+        } else {
+          try { localStorage.removeItem(FORCE_MEMBER_KEY); } catch(e){}
+        }
+      }
       hideGate();
       bootApp();
     },
       onError: (err) => {
+      accessResolved = true;
+      stopGateTimer();
       console.error("[auth] access listener failed", err);
       showGate("Auth listener failed.");
       if(signOutBtn) signOutBtn.style.display = "none";
       if(plannerSignOutBtn) plannerSignOutBtn.style.display = "none";
     }});
 
-    showGate(initialFlash || "");
+    scheduleInitialGate();
   })();
 
 })();
